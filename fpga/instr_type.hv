@@ -1,0 +1,9 @@
+// https://stackoverflow.com/questions/59786569/verilog-module-parameters-in-seperate-config-file
+
+localparam R_TYPE = 3'd0;
+localparam I_TYPE = 3'd1;
+localparam S_TYPE = 3'd2;
+localparam B_TYPE = 3'd3;
+localparam U_TYPE = 3'd4;
+localparam J_TYPE = 3'd5;
+localparam R4_TYPE = 3'd6;

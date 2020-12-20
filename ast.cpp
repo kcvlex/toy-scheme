@@ -21,6 +21,7 @@ void ConstantNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this)
 ASTNode::~ASTNode() {
 }
 
+
 /***** Eval Node *****/
 
 EvalNode::EvalNode() : children()
