@@ -1,0 +1,44 @@
+/* LOAD */
+
+localparam FUNCT3_LB = 3'b000;
+localparam FUNCT3_LH = 3'b001;
+localparam FUNCT3_LW = 3'b010;
+localparam FUNCT3_LBU = 3'b100;
+localparam FUNCT3_LHU = 3'b101;
+
+/* STORE */
+
+localparam FUNCT3_SB = 3'b000;
+localparam FUNCT3_SH = 3'b001;
+localparam FUNCT3_SW = 3'b010;
+
+/* OP-IMM */
+
+localparam FUNCT3_ADDI = 3'b000;
+localparam FUNCT3_SLTI = 3'b010;
+localparam FUNCT3_SLTIU = 3'b011;
+localparam FUNCT3_XORI = 3'b100;
+localparam FUNCT3_ORI = 3'b110;
+localparam FUNCT3_ANDI = 3'b111;
+localparam FUNCT3_SLLI = 3'b001;
+localparam FUNCT3_SRI = 3'b101;  // Logical or Arithmetic is specified by funct7
+
+/* OP */
+
+localparam FUNCT3_ADD = 3'b000;  // ADD or SUB is specified by funct7
+localparam FUNCT3_SLL = 3'b001;
+localparam FUNCT3_SLT = 3'b010;
+localparam FUNCT3_SLTU = 3'b011;
+localparam FUNCT3_XOR = 3'b100;
+localparam FUNCT3_SR = 3'b101;  // Logical or Arithmetic is specified by funct7
+localparam FUNCT3_OR = 3'b110;
+localparam FUNCT3_AND = 3'b111;
+
+localparam FUNCT7_SRLI = 7'b00_00000;
+localparam FUNCT7_SRAI = 7'b01_00000;
+
+localparam FUNCT7_ADD = 7'b00_00000;
+localparam FUNCT7_SUB = 7'b01_00000;
+
+localparam FUNCT7_SRL = 7'b00_00000;
+localparam FUNCT7_SRA = 7'b01_00000;

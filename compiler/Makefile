@@ -1,7 +1,9 @@
 CXX = g++
 CXX_FLAGS = -Wall -g -std=c++17
 
-prog: main.o token.o parser.o ast.o
+all: main
+
+main: main.o token.o parser.o ast.o
 	${CXX} ${CXX_FLAGS} $^ -o $@
 
 main.o: main.cpp token.hpp
@@ -17,4 +19,4 @@ ast.o: ast.cpp ast.hpp
 	${CXX} ${CXX_FLAGS} -c $< 
 
 clean:
-	rm *.o *.gch
+	rm *.o
