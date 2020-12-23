@@ -1,4 +1,5 @@
-#include "bit-operation.hpp"
+#include "bit_operation.hpp"
+#include <cassert>
 
 namespace assembler {
 
@@ -39,6 +40,7 @@ BitOperation& BitOperation::operator>>=(const std::uint8_t w) noexcept {
             val |= (~value_type(v));
         }
     }
+    return *this;
 }
 
 BitOperation& BitOperation::operator<<=(const std::uint8_t w) noexcept { val <<= w; return *this; }

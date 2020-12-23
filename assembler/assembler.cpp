@@ -1,7 +1,10 @@
 #include "assembler.hpp"
-#include "bit-operation.hpp"
+#include "bit_operation.hpp"
+#include "enum2str.hpp"
 #include <algorithm>
 #include <sstream>
+#include <cassert>
+#include <iostream>
 
 namespace assembler {
 
@@ -13,6 +16,11 @@ Assembler::raw_type Assembler::encode(const std::string &line) const {
     ss >> s_instr;
     ss >> operands;
     assert(ss.eof());
+
+    std::for_each(std::begin(operands), std::end(operands),
+                  [&](char &c) {
+                      if (c == ',') c = ' ';
+                  });
 
     auto instr = str2instr(s_instr);
     switch (instr) {
@@ -74,7 +82,7 @@ Assembler::raw_type Assembler::encode_sll(const std::string &operands) const {
     return R_type_aux(0b01'100'11, 0b001, 0, operands);
 }
 
-Assembler::raw_type Assembler::raw_type encode_slt(const std::string &operands) const {
+Assembler::raw_type Assembler::encode_slt(const std::string &operands) const {
     return R_type_aux(0b01'100'11, 0b010, 0, operands);
 }
 
@@ -121,7 +129,7 @@ struct raw_instr_builder {
         auto v = bop(r, l);  // if r or l is ill-formed, error here.
         const auto len = r - l + 1;
         val <<= len;
-        val += v;
+        val += v.get();
         return *this;
     }
 };
@@ -166,19 +174,21 @@ std::int32_t Assembler::get_reg_id(const std::string &reg) const {
     assert(false);
 }
 
-Instructions str2instr(std::string instr_str) const {
+Instructions Assembler::str2instr(std::string instr_str) const {
     std::for_each(std::begin(instr_str), std::end(instr_str),
                   [&](char &c) {
-                      if ('a' <= c && c <= 'z') return c - 'a' + 'A';
-                      return c;
+                      if ('a' <= c && c <= 'z') {
+                          c = static_cast<char>(c - 'a' + 'A');
+                      } else {
+                      }
                   });
 
-    for (int i = 0; i < int(instr2str.size()); i++) {
-        if (instr2str[i] == instr_str) {
-            return static_cast<Instructions>(i);
-        }
+    for (std::size_t i = 0; i != std::size_t(Instructions::Size); i++) {
+        auto instr = static_cast<Instructions>(i);
+        if (util::to_str<Instructions>(instr) == instr_str) return instr;
     }
 
+    std::cout << instr_str << std::endl;
     assert(false);
 }
     

@@ -3,54 +3,11 @@
 
 #include <vector>
 #include <string>
+#include "../compiler/sem-analyzer.hpp"
 
 namespace assembler {
 
-#define INSTRUCTIONS \
-    DUMMY = 0, \
-    LUI, \
-    AUIPC, \
-    JAL, \
-    JALR, \
-    BEQ, \
-    BNE, \
-    BLT, \
-    BGE, \
-    BLTU, \
-    BGEU, \
-    LB, \
-    LH, \
-    LW, \
-    LBU, \
-    LHU, \
-    SB, \
-    SH, \
-    SW, \
-    ADDI, \
-    SLTI, \
-    SLTIU, \
-    XORI, \
-    ORI, \
-    ANDI, \
-    SLLI, \
-    SRLI, \
-    ADD, \
-    SUB, \
-    SLL, \
-    SLT, \
-    SLTU, \
-    XOR, \
-    SRL, \
-    SRA, \
-    OR, \
-    AND, \
-    FENCE,
-
-#define TO_STR(...) #__VA_ARGS__
-
-enum class Instructions {
-    INSTRUCTIONS
-};
+using compiler::Instructions;
 
 struct Assembler {
     using raw_type = std::uint32_t;
@@ -58,8 +15,6 @@ struct Assembler {
     raw_type encode(const std::string &line) const;
 
 private:
-    const static inline std::vector<std::string> instr2str = { TO_STR(INSTRUCTIONS) };
-
     raw_type encode_addi(const std::string &operands) const;
     raw_type encode_slti(const std::string &operands) const;
     raw_type encode_sltiu(const std::string &operands) const;
@@ -131,9 +86,6 @@ private:
                         const std::int32_t funct3,
                         const std::string &operands) const;
 };
-
-#undef TO_STR
-#undef INSTRUCTIONS
 
 }
 

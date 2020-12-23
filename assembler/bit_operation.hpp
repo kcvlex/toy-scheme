@@ -2,11 +2,12 @@
 #define INCLUDE_BIT_OPERATION
 
 #include <cstdint>
+#include <bitset>
 
 namespace assembler {
 
 struct BitOperation {
-    using value_type = std::bitset<64>();
+    using value_type = std::bitset<64>;
 
     BitOperation() noexcept;
     BitOperation(const value_type val_arg) noexcept;
