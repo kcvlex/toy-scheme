@@ -8,19 +8,25 @@ module top();
     initial begin $dumpfile("wave.vcd"); $dumpvars(0, p); end
 
     initial begin
+        /*
         p.imem.mem[0] = 32'd0;
         p.imem.mem[1] = { 12'd10, 5'd0, 3'b0, 5'd5, 7'b0010011 };
         p.imem.mem[2] = { 12'd32, 5'd0, 3'b0, 5'd6, 7'b0010011 };
-        p.imem.mem[3] = { 7'd0, 5'd6, 5'd5, 3'b0, 5'd7, 7'b0110011 }; 
+        p.imem.mem[3] = { 7'd0, 5'd6, 5'd5, 3'b0, 5'd7, 7'b0110011 };
+        */
+        p.imem.mem[0] = 32'd0;
+        p.imem.mem[1] = 32'b11111101000000000000001010010011;
+        p.imem.mem[2] = 32'b00000010101000000000001100010011;
+        p.imem.mem[3] = 32'b00000000011000101000001110110011;
     end
     
     always @(CLK) begin
         $write("%d: %d %d %d %d %d %d %d %d %d %d %d\n", 
                 $stime, RST_X, p.cpu.we,
                 p.cpu.rs1, p.cpu.rs2, p.cpu.rd,
-                p.cpu.regfile.x[5], p.cpu.regfile.x[6], p.cpu.regfile.x[7],
-                p.cpu.rrs1, p.cpu.rrs2,
-                p.cpu.result);
+                $signed(p.cpu.regfile.x[5]), $signed(p.cpu.regfile.x[6]), $signed(p.cpu.regfile.x[7]),
+                $signed(p.cpu.rrs1), $signed(p.cpu.rrs2),
+                $signed(p.cpu.result));
     end
 
     PROCESSOR p(CLK, RST_X);

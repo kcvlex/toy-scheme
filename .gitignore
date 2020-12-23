@@ -3,3 +3,5 @@ prog
 *.gch
 gomi
 a.out
+main
+*-test
