@@ -3,7 +3,7 @@
 #include "parser.hpp"
 #include "three_address_code.hpp"
 #include "sem_analyzer.hpp"
-#include "enum2str.hpp"
+#include "util/enum2str.hpp"
 
 using namespace compiler;
 

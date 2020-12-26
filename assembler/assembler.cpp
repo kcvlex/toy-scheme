@@ -1,6 +1,6 @@
 #include "assembler.hpp"
 #include "bit_operation.hpp"
-#include "enum2str.hpp"
+#include "util/enum2str.hpp"
 #include <algorithm>
 #include <sstream>
 #include <cassert>

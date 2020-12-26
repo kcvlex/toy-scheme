@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <string>
-#include "../compiler/sem-analyzer.hpp"
+#include "compiler/sem_analyzer.hpp"
 
 namespace assembler {
 
@@ -15,6 +15,12 @@ struct Assembler {
     raw_type encode(const std::string &line) const;
 
 private:
+    raw_type encode_lb(const std::string &operands) const;
+    raw_type encode_lh(const std::string &operands) const;
+    raw_type encode_lw(const std::string &operands) const;
+    raw_type encode_sb(const std::string &operands) const;
+    raw_type encode_sh(const std::string &operands) const;
+    raw_type encode_sw(const std::string &operands) const;
     raw_type encode_addi(const std::string &operands) const;
     raw_type encode_slti(const std::string &operands) const;
     raw_type encode_sltiu(const std::string &operands) const;
