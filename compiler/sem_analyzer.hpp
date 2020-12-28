@@ -25,13 +25,13 @@ struct SymboledValue {
 
 struct SymbolTable {
     using symbols_type = std::list<SymboledValue>;
-    using arg_regs_map = std::array<SymboledValue*, regs::argument_regs.size()>;
+    using arg_regs_map = std::array<SymboledValue*, arg_reg_num>;
 
     SymbolTable();
     void set_arg_mapping(const LambdaNode *lambda, const std::uint32_t cur_nest);
     void restore_arg_mapping();
     SymboledValue* find(const std::string &name) const;
-    std::optional<register_id_type> find_arg(const std::string &name) const;
+    std::optional<Reg> find_arg(const std::string &name) const;
 
 private:
     arg_regs_map gen_default_map() const;

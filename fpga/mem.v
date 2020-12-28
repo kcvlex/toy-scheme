@@ -1,4 +1,4 @@
-module IMEM(
+module MEM(
     input wire CLK, RST_X,
     input wire [31:0] addr,
     output wire [31:0] out_data

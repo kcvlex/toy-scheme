@@ -5,6 +5,8 @@
 #include <utility>
 #include <array>
 
+// Only `enum class` is allowed
+
 namespace util {
 
 namespace internal {

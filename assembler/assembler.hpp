@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <string>
-#include "compiler/sem_analyzer.hpp"
+#include "compiler/three_address_code.hpp"
 
 namespace assembler {
 
@@ -12,37 +12,36 @@ using compiler::Instructions;
 struct Assembler {
     using raw_type = std::uint32_t;
 
-    raw_type encode(const std::string &line) const;
+    raw_type encode(const compiler::ThreeAddressCode &code) const;
 
 private:
-    raw_type encode_lb(const std::string &operands) const;
-    raw_type encode_lh(const std::string &operands) const;
-    raw_type encode_lw(const std::string &operands) const;
-    raw_type encode_sb(const std::string &operands) const;
-    raw_type encode_sh(const std::string &operands) const;
-    raw_type encode_sw(const std::string &operands) const;
-    raw_type encode_addi(const std::string &operands) const;
-    raw_type encode_slti(const std::string &operands) const;
-    raw_type encode_sltiu(const std::string &operands) const;
-    raw_type encode_xori(const std::string &operands) const;
-    raw_type encode_ori(const std::string &operands) const;
-    raw_type encode_andi(const std::string &operands) const;
-    // raw_type encode_slli(const std::string &operands) const;
-    // raw_type encode_srli(const std::string &operands) const;
-    raw_type encode_add(const std::string &operands) const;
-    raw_type encode_sub(const std::string &operands) const;
-    raw_type encode_sll(const std::string &operands) const;
-    raw_type encode_slt(const std::string &operands) const;
-    raw_type encode_sltu(const std::string &operands) const;
-    raw_type encode_xor(const std::string &operands) const;
-    raw_type encode_srl(const std::string &operands) const;
-    raw_type encode_sra(const std::string &operands) const;
-    raw_type encode_or(const std::string &operands) const;
-    raw_type encode_and(const std::string &operands) const;
+    raw_type encode_lb(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_lh(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_lw(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_sb(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_sh(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_sw(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_addi(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_slti(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_sltiu(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_xori(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_ori(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_andi(const compiler::ThreeAddressCode &code) const;
+    // raw_type encode_slli(const compiler::ThreeAddressCode &code) const;
+    // raw_type encode_srli(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_add(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_sub(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_sll(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_slt(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_sltu(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_xor(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_srl(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_sra(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_or(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_and(const compiler::ThreeAddressCode &code) const;
 
     // return register index
-    std::int32_t get_reg_id(const std::string &reg) const;
-    Instructions str2instr(std::string instr_str) const;
+    std::int32_t get_reg_id(const compiler::Reg reg) const;
 
     // funct7 | rs2 | rs1 | funct3 | rd | opcode
     raw_type R_type(const std::int32_t opcode, 
@@ -86,11 +85,15 @@ private:
     raw_type R_type_aux(const std::int32_t opcode, 
                         const std::int32_t funct3,
                         const std::int32_t funct7,
-                        const std::string &operands) const;
+                        const compiler::ThreeAddressCode &code) const;
 
     raw_type I_type_aux(const std::int32_t opcode,
                         const std::int32_t funct3,
-                        const std::string &operands) const;
+                        const compiler::ThreeAddressCode &code) const;
+
+    raw_type S_type_aux(const std::int32_t opcode,
+                        const std::int32_t funct3,
+                        const compiler::ThreeAddressCode &code) const;
 };
 
 }

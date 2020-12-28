@@ -1,19 +1,21 @@
 #include "three_address_code.hpp"
+#include "util/enum2str.hpp"
+#include <tuple>
 
 namespace compiler {
 
 /******************** Operand ********************/
 
-Operand make_reg(const register_id_type reg_id) {
-    return Operand(std::in_place_index<0>, reg_id);
+Operand reg2operand(const Reg reg) {
+    return Operand(std::in_place_index<0>, reg);
 }
 
-Operand make_imm(const imm_value_type imm) {
+Operand imm2operand(const imm_value_type imm) {
     return Operand(std::in_place_index<1>, imm);
 }
 
-Operand make_ref_mem(const register_id_type reg_id, const imm_value_type offset) {
-    return Operand(std::in_place_index<2>, reg_id, offset);
+Operand refmem2operand(const Reg reg, const imm_value_type offset) {
+    return Operand(std::in_place_index<2>, std::make_pair(reg, offset));
 }
 
 
@@ -48,6 +50,44 @@ ThreeAddressCode::ThreeAddressCode(const Instructions instr,
                                    const Operand op3)
     : instr(instr), op1(op1), op2(op2), op3(op3)
 {
+}
+
+void ThreeAddressCode::read(Reg &r1, Reg &r2, Reg &r3) const {
+    r1 = std::get<Reg>(op1.value());
+    r2 = std::get<Reg>(op2.value());
+    r3 = std::get<Reg>(op3.value());
+}
+
+void ThreeAddressCode::read(Reg &r1, Reg &r2, imm_value_type &imm) const {
+    try {
+        r1 = std::get<Reg>(op1.value());
+        r2 = std::get<Reg>(op2.value());
+        imm = std::get<imm_value_type>(op3.value());
+        return;
+    } catch (std::exception&) { }
+
+    r1 = std::get<Reg>(op1.value());
+    std::tie(r2, imm) = std::get<ref_mem_type>(op2.value());
+}
+
+
+std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val) {
+    os << util::to_str(val.instr);
+    std::string elim = "\t";
+    for (auto op : { val.op1, val.op2, val.op3 }) {
+        if (!op.has_value()) break;
+        os << std::exchange(elim, ",");
+        auto value = op.value();
+        if (auto p = std::get_if<0>(&value)) {
+            os << util::to_str(*p);
+        } else if (auto p = std::get_if<1>(&value)) {
+            os << int(*p);
+        } else if (auto p = std::get_if<2>(&value)) {
+            auto [ reg, imm ] = *p;
+            os << imm << "(" << util::to_str(reg) << ")";
+        }
+    }
+    return os;
 }
 
 
@@ -116,37 +156,54 @@ InputCodeStream& InputCodeStream::append_code(const Instructions instr,
     return *this;
 }
 
-InputCodeStream& InputCodeStream::append_lw_code(const register_id_type dst,
-                                                 const register_id_type base,
+InputCodeStream& InputCodeStream::append_lw_code(const Reg dst,
+                                                 const Reg base,
                                                  const imm_value_type offset)
 {
     return append_code(Instructions::LW,
-                       make_reg(dst),
-                       make_ref_mem(base, offset));
+                       reg2operand(dst),
+                       refmem2operand(base, offset));
 }
 
-InputCodeStream& InputCodeStream::append_sw_code(const register_id_type src,
-                                                 const register_id_type base,
+InputCodeStream& InputCodeStream::append_sw_code(const Reg src,
+                                                 const Reg base,
                                                  const imm_value_type offset) 
 {
     return append_code(Instructions::SW,
-                       make_reg(src),
-                       make_ref_mem(base, offset));
+                       reg2operand(src),
+                       refmem2operand(base, offset));
 }
 
-InputCodeStream& InputCodeStream::append_push_code(const register_id_type src) {
-    return this->append_sw_code(src, regs::sp, 0)
-                .append_code(Instructions::ADDI, make_reg(regs::sp), make_reg(regs::sp), make_imm(-4));
+InputCodeStream& InputCodeStream::append_push_code(const Reg src) {
+    return this->append_sw_code(src, Reg::sp, 0)
+                .append_code(Instructions::ADDI, 
+                             reg2operand(Reg::sp), 
+                             reg2operand(Reg::sp), 
+                             imm2operand(-4));
 }
 
-InputCodeStream& InputCodeStream::append_pop_code(const register_id_type dst) {
-    return this->append_lw_code(dst, regs::sp, 0)
-                .append_code(Instructions::ADDI, make_reg(regs::sp), make_reg(regs::sp), make_imm(4));
+InputCodeStream& InputCodeStream::append_pop_code(const Reg dst) {
+    return this->append_lw_code(dst, Reg::sp, 0)
+                .append_code(Instructions::ADDI, 
+                             reg2operand(Reg::sp), 
+                             reg2operand(Reg::sp), 
+                             imm2operand(4));
+}
+
+InputCodeStream& InputCodeStream::append_assign_code(const Reg dst, const Reg src) {
+    return this->append_code(Instructions::OR,
+                             reg2operand(dst),
+                             reg2operand(src),
+                             reg2operand(src));
 }
 
 InputCodeStream& InputCodeStream::concat_stream(const InputCodeStream &oth) {
     buf.insert(std::end(buf), std::cbegin(oth.buf), std::cend(oth.buf));
     return *this;
+}
+
+void InputCodeStream::clear() {
+    buf.clear();
 }
 
 OutputCodeStream InputCodeStream::convert() {

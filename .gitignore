@@ -1,4 +1,5 @@
 prog
+*.a
 *.o
 *.gch
 gomi

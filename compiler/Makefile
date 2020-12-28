@@ -4,13 +4,10 @@ UTIL_DIR = ${ROOT_DIR}/util
 CXX_FLAGS = -Wall -g -std=c++17 -I${ROOT_DIR}
 HEADERS = $(shell ls *hpp)
 
-all: main
+all: compiler.a
 
-main: main.o token.o parser.o ast.o three_address_code.o sem_analyzer.o
-	${CXX} ${CXX_FLAGS} $^ -o $@
-
-main.o: main.cpp ${HEADERS} ${UTIL_DIR}/enum2str.hpp
-	${CXX} ${CXX_FLAGS} -c $<
+compiler.a: token.o parser.o ast.o three_address_code.o sem_analyzer.o
+	ar rcs $@ $^
 
 sem_analyzer.o: sem_analyzer.cpp sem_analyzer.hpp ast.hpp three_address_code.hpp
 	${CXX} ${CXX_FLAGS} -c $< 
@@ -28,4 +25,4 @@ ast.o: ast.cpp ast.hpp
 	${CXX} ${CXX_FLAGS} -c $< 
 
 clean:
-	rm *.o
+	rm *.{o,a}

@@ -2,113 +2,132 @@
 #include "bit_operation.hpp"
 #include "util/enum2str.hpp"
 #include <algorithm>
-#include <sstream>
 #include <cassert>
 #include <iostream>
 
 namespace assembler {
 
-Assembler::raw_type Assembler::encode(const std::string &line) const {
-    std::stringstream ss(line);
-    std::string s_instr, operands;
-
+Assembler::raw_type Assembler::encode(const compiler::ThreeAddressCode &code) const {
     // FIXME : label
-    ss >> s_instr;
-    ss >> operands;
-    assert(ss.eof());
 
-    std::for_each(std::begin(operands), std::end(operands),
-                  [&](char &c) {
-                      if (c == ',') c = ' ';
-                  });
-
-    auto instr = str2instr(s_instr);
-    switch (instr) {
-        case Instructions::ADDI:  return encode_addi(operands);
-        case Instructions::SLTI:  return encode_slti(operands);
-        case Instructions::SLTIU: return encode_sltiu(operands);
-        case Instructions::XORI:  return encode_xori(operands);
-        case Instructions::ORI:   return encode_ori(operands);
-        case Instructions::ANDI:  return encode_andi(operands);
-        // case Instructions::SLLI:  return encode_slli(operands);
-        // case Instructions::SRLI:  return encode_srli(operands);
-        case Instructions::ADD:   return encode_add(operands);
-        case Instructions::SUB:   return encode_sub(operands);
-        case Instructions::SLL:   return encode_sll(operands);
-        case Instructions::SLT:   return encode_slt(operands);
-        case Instructions::SLTU:  return encode_sltu(operands);
-        case Instructions::XOR:   return encode_xor(operands);
-        case Instructions::SRL:   return encode_srl(operands);
-        case Instructions::SRA:   return encode_sra(operands);
-        case Instructions::OR:    return encode_or(operands);
-        case Instructions::AND:   return encode_and(operands);
+    switch (code.instr) {
+        case Instructions::LB:    return encode_lb(code);
+        case Instructions::LH:    return encode_lh(code);
+        case Instructions::LW:    return encode_lw(code);
+        case Instructions::SB:    return encode_sb(code);
+        case Instructions::SH:    return encode_sh(code);
+        case Instructions::SW:    return encode_sw(code);
+        case Instructions::ADDI:  return encode_addi(code);
+        case Instructions::SLTI:  return encode_slti(code);
+        case Instructions::SLTIU: return encode_sltiu(code);
+        case Instructions::XORI:  return encode_xori(code);
+        case Instructions::ORI:   return encode_ori(code);
+        case Instructions::ANDI:  return encode_andi(code);
+        // case Instructions::SLLI:  return encode_slli(code);
+        // case Instructions::SRLI:  return encode_srli(code);
+        case Instructions::ADD:   return encode_add(code);
+        case Instructions::SUB:   return encode_sub(code);
+        case Instructions::SLL:   return encode_sll(code);
+        case Instructions::SLT:   return encode_slt(code);
+        case Instructions::SLTU:  return encode_sltu(code);
+        case Instructions::XOR:   return encode_xor(code);
+        case Instructions::SRL:   return encode_srl(code);
+        case Instructions::SRA:   return encode_sra(code);
+        case Instructions::OR:    return encode_or(code);
+        case Instructions::AND:   return encode_and(code);
         default: assert(false);
     }
 }
+
+Assembler::raw_type Assembler::encode_lb(const compiler::ThreeAddressCode &code) const {
+    return I_type_aux(0b00'000'11, 0b000, code);
+}
+
+Assembler::raw_type Assembler::encode_lh(const compiler::ThreeAddressCode &code) const {
+    return I_type_aux(0b00'000'11, 0b001, code);
+}
+
+Assembler::raw_type Assembler::encode_lw(const compiler::ThreeAddressCode &code) const {
+    return I_type_aux(0b00'000'11, 0b010, code);
+}
     
-Assembler::raw_type Assembler::encode_addi(const std::string &operands) const {
-    return I_type_aux(0b00'100'11, 0b000, operands);
+Assembler::raw_type Assembler::encode_sb(const compiler::ThreeAddressCode &code) const {
+    return S_type_aux(0b01'000'11, 0b000, code);
+}
+   
+Assembler::raw_type Assembler::encode_sh(const compiler::ThreeAddressCode &code) const {
+    return S_type_aux(0b01'000'11, 0b001, code);
+}
+   
+Assembler::raw_type Assembler::encode_sw(const compiler::ThreeAddressCode &code) const {
+    return S_type_aux(0b01'000'11, 0b010, code);
 }
 
-Assembler::raw_type Assembler::encode_slti(const std::string &operands) const {
-    return I_type_aux(0b00'100'11, 0b010, operands);
+Assembler::raw_type Assembler::encode_addi(const compiler::ThreeAddressCode &code) const {
+    return I_type_aux(0b00'100'11, 0b000, code);
 }
 
-Assembler::raw_type Assembler::encode_sltiu(const std::string &operands) const {
-    return I_type_aux(0b00'100'11, 0b011, operands);
+Assembler::raw_type Assembler::encode_slti(const compiler::ThreeAddressCode &code) const {
+    return I_type_aux(0b00'100'11, 0b010, code);
 }
 
-Assembler::raw_type Assembler::encode_xori(const std::string &operands) const {
-    return I_type_aux(0b00'100'11, 0b100, operands);
+Assembler::raw_type Assembler::encode_sltiu(const compiler::ThreeAddressCode &code) const {
+    return I_type_aux(0b00'100'11, 0b011, code);
 }
 
-Assembler::raw_type Assembler::encode_ori(const std::string &operands) const {
-    return I_type_aux(0b00'100'11, 0b110, operands);
+Assembler::raw_type Assembler::encode_xori(const compiler::ThreeAddressCode &code) const {
+    return I_type_aux(0b00'100'11, 0b100, code);
 }
 
-Assembler::raw_type Assembler::encode_andi(const std::string &operands) const {
-    return I_type_aux(0b00'100'11, 0b111, operands);
+Assembler::raw_type Assembler::encode_ori(const compiler::ThreeAddressCode &code) const {
+    return I_type_aux(0b00'100'11, 0b110, code);
 }
 
-Assembler::raw_type Assembler::encode_add(const std::string &operands) const {
-    return R_type_aux(0b01'100'11, 0, 0, operands);
+Assembler::raw_type Assembler::encode_andi(const compiler::ThreeAddressCode &code) const {
+    return I_type_aux(0b00'100'11, 0b111, code);
 }
 
-Assembler::raw_type Assembler::encode_sub(const std::string &operands) const {
-    return R_type_aux(0b01'100'11, 0, 0b0100000, operands);
+Assembler::raw_type Assembler::encode_add(const compiler::ThreeAddressCode &code) const {
+    return R_type_aux(0b01'100'11, 0, 0, code);
 }
 
-Assembler::raw_type Assembler::encode_sll(const std::string &operands) const {
-    return R_type_aux(0b01'100'11, 0b001, 0, operands);
+Assembler::raw_type Assembler::encode_sub(const compiler::ThreeAddressCode &code) const {
+    return R_type_aux(0b01'100'11, 0, 0b0100000, code);
 }
 
-Assembler::raw_type Assembler::encode_slt(const std::string &operands) const {
-    return R_type_aux(0b01'100'11, 0b010, 0, operands);
+Assembler::raw_type Assembler::encode_sll(const compiler::ThreeAddressCode &code) const {
+    return R_type_aux(0b01'100'11, 0b001, 0, code);
 }
 
-Assembler::raw_type Assembler::encode_sltu(const std::string &operands) const {
-    return R_type_aux(0b01'100'11, 0b011, 0, operands);
+Assembler::raw_type Assembler::encode_slt(const compiler::ThreeAddressCode &code) const {
+    return R_type_aux(0b01'100'11, 0b010, 0, code);
 }
 
-Assembler::raw_type Assembler::encode_xor(const std::string &operands) const {
-    return R_type_aux(0b01'100'11, 0b100, 0, operands);
+Assembler::raw_type Assembler::encode_sltu(const compiler::ThreeAddressCode &code) const {
+    return R_type_aux(0b01'100'11, 0b011, 0, code);
 }
 
-Assembler::raw_type Assembler::encode_srl(const std::string &operands) const {
-    return R_type_aux(0b01'100'11, 0b101, 0, operands);
+Assembler::raw_type Assembler::encode_xor(const compiler::ThreeAddressCode &code) const {
+    return R_type_aux(0b01'100'11, 0b100, 0, code);
 }
 
-Assembler::raw_type Assembler::encode_sra(const std::string &operands) const {
-    return R_type_aux(0b01'100'11, 0b101, 0b0100000, operands);
+Assembler::raw_type Assembler::encode_srl(const compiler::ThreeAddressCode &code) const {
+    return R_type_aux(0b01'100'11, 0b101, 0, code);
 }
 
-Assembler::raw_type Assembler::encode_or(const std::string &operands) const {
-    return R_type_aux(0b01'100'11, 0b110, 0, operands);
+Assembler::raw_type Assembler::encode_sra(const compiler::ThreeAddressCode &code) const {
+    return R_type_aux(0b01'100'11, 0b101, 0b0100000, code);
 }
 
-Assembler::raw_type Assembler::encode_and(const std::string &operands) const {
-    return R_type_aux(0b01'100'11, 0b111, 0, operands);
+Assembler::raw_type Assembler::encode_or(const compiler::ThreeAddressCode &code) const {
+    return R_type_aux(0b01'100'11, 0b110, 0, code);
 }
+
+Assembler::raw_type Assembler::encode_and(const compiler::ThreeAddressCode &code) const {
+    return R_type_aux(0b01'100'11, 0b111, 0, code);
+}
+
+using register_id_type = std::uint8_t;
 
 namespace {
     
@@ -134,64 +153,27 @@ struct raw_instr_builder {
     }
 };
 
+using compiler::Reg;
+
+constexpr std::array<compiler::Reg, 32> ordered_regs = {{
+    Reg::zero, Reg::ra, Reg::sp, Reg::gp, Reg::tp,
+    Reg::t0, Reg::t1, Reg::t2,
+    Reg::s0, Reg::s1,
+    Reg::a0, Reg::a1, Reg::a2, Reg::a3, Reg::a4, Reg::a5, Reg::a6, Reg::a7,
+    Reg::s2, Reg::s3, Reg::s4, Reg::s5, Reg::s6, Reg::s7, Reg::s8, Reg::s9, Reg::s10, Reg::s11,
+    Reg::t3, Reg::t4, Reg::t5, Reg::t6,
+}};
+
+
+}  // anonymous
+
+// FIXME
+std::int32_t Assembler::get_reg_id(const compiler::Reg reg) const {
+    const auto &arr = ordered_regs;
+    const auto ite = std::find(std::cbegin(arr), std::cend(arr), reg);
+    return std::distance(std::cbegin(arr), ite);
 }
 
-std::int32_t Assembler::get_reg_id(const std::string &reg) const {
-    if (reg == "zero") return 0;
-    if (reg == "ra") return 1;
-    if (reg == "sp") return 2;
-    if (reg == "gp") return 3;
-    if (reg == "tp") return 4;
-
-    if (reg == "t0") return 5;
-    if (reg == "t1") return 6;
-    if (reg == "t2") return 7;
-
-    if (reg == "s0") return 8;
-    if (reg == "s1") return 9;
-
-    for (int i = 10; i <= 17; i++) {
-        std::string s;
-        s += "a";
-        s += std::to_string(i - 10);
-        if (reg == s) return i;
-    }
-
-    for (int i = 18; i <= 27; i++) {
-        std::string s;
-        s += "s";
-        s += std::to_string(i - 16);
-        if (reg == s) return i;
-    }
-
-    for (int i = 28; i < 32; i++) {
-        std::string s;
-        s += "t";
-        s += std::to_string(i - 28 + 3);
-        if (reg == s) return i;
-    }
-
-    assert(false);
-}
-
-Instructions Assembler::str2instr(std::string instr_str) const {
-    std::for_each(std::begin(instr_str), std::end(instr_str),
-                  [&](char &c) {
-                      if ('a' <= c && c <= 'z') {
-                          c = static_cast<char>(c - 'a' + 'A');
-                      } else {
-                      }
-                  });
-
-    for (std::size_t i = 0; i != std::size_t(Instructions::Size); i++) {
-        auto instr = static_cast<Instructions>(i);
-        if (util::to_str<Instructions>(instr) == instr_str) return instr;
-    }
-
-    std::cout << instr_str << std::endl;
-    assert(false);
-}
-    
 Assembler::raw_type Assembler::R_type(const std::int32_t opcode, 
                                       const std::int32_t rs1, 
                                       const std::int32_t rs2, 
@@ -290,11 +272,10 @@ Assembler::raw_type Assembler::J_type(const std::int32_t opcode,
 Assembler::raw_type Assembler::R_type_aux(const std::int32_t opcode, 
                                           const std::int32_t funct3,
                                           const std::int32_t funct7,
-                                          const std::string &operands) const 
+                                          const compiler::ThreeAddressCode &code) const 
 {
-    std::stringstream ss(operands);
-    std::string rd, rs1, rs2;
-    ss >> rd >> rs1 >> rs2;
+    compiler::Reg rd, rs1, rs2;
+    code.read(rd, rs1, rs2);
     return R_type(opcode,
                   get_reg_id(rs1),
                   get_reg_id(rs2),
@@ -305,15 +286,28 @@ Assembler::raw_type Assembler::R_type_aux(const std::int32_t opcode,
 
 Assembler::raw_type Assembler::I_type_aux(const std::int32_t opcode, 
                                           const std::int32_t funct3,
-                                          const std::string &operands) const 
+                                          const compiler::ThreeAddressCode &code) const 
 {
-    std::stringstream ss(operands);
-    std::string rd, rs1;
-    std::int32_t imm;
-    ss >> rd >> rs1 >> imm;
+    compiler::Reg rd, rs1;
+    compiler::imm_value_type imm;
+    code.read(rd, rs1, imm);
     return I_type(opcode,
                   get_reg_id(rs1),
                   get_reg_id(rd),
+                  funct3,
+                  imm);
+}
+
+Assembler::raw_type Assembler::S_type_aux(const std::int32_t opcode,
+                                          const std::int32_t funct3,
+                                          const compiler::ThreeAddressCode &code) const 
+{
+    compiler::Reg rs1, rs2;
+    compiler::imm_value_type imm;
+    code.read(rs1, rs2, imm);
+    return S_type(opcode,
+                  get_reg_id(rs1),
+                  get_reg_id(rs2),
                   funct3,
                   imm);
 }

@@ -4,7 +4,7 @@ module top();
     reg CLK, RST_X;
     initial begin CLK = 1; forever #50 CLK = ~CLK; end
     initial begin RST_X = 0; #125 RST_X = 1;       end
-    initial begin #900 $finish();                  end
+    initial begin #10000 $finish();                  end
     initial begin $dumpfile("wave.vcd"); $dumpvars(0, p); end
 
     initial begin

@@ -1,8 +1,11 @@
 #include "assembler.hpp"
+#include "compiler/sem_analyzer.hpp"
+#include "compiler/parser.hpp"
 #include <iostream>
 #include <bitset>
 
 int main() {
+    /*
     const std::vector<std::string> instr_v = {
         "addi    t0,zero,-48",
         // "sw  s0,44(sp)",
@@ -21,4 +24,5 @@ int main() {
         std::cout << "p.imem.mem[" << i + 1 << "] = 32'b" << std::bitset<32>(res) << ";" << std::endl;
     }
     return 0;
+    */
 }
