@@ -3,7 +3,7 @@ module REGFILE(
     input wire we,
     input wire [4:0] rs1, rs2, rd,
     input wire [31:0] wd,
-    output wire [31:0] rrs1, rrs2, a0
+    output wire [31:0] rrs1, rrs2
 );
     reg [31:0] x[0:31];
 
@@ -17,5 +17,5 @@ module REGFILE(
 
     assign #5 rrs1 = (RST_X ? x[rs1] : 32'h0);
     assign #5 rrs2 = (RST_X ? x[rs2] : 32'h0);
-    assign #5 a0 = (RST_X ? x[5'd10] : 32'h0);  // return value
+    // assign #5 a0 = (RST_X ? x[5'd10] : 32'h0);  // return value
 endmodule

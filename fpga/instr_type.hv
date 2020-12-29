@@ -1,6 +1,6 @@
 // https://stackoverflow.com/questions/59786569/verilog-module-parameters-in-seperate-config-file
 
-/* Instructino Format */
+/** Instructino Format **/
 
 localparam R_TYPE = 3'd0;
 localparam I_TYPE = 3'd1;
@@ -10,32 +10,72 @@ localparam U_TYPE = 3'd4;
 localparam J_TYPE = 3'd5;
 localparam R4_TYPE = 3'd6;
 
-/* Instruction Type */
+/** Instruction Type **/
+
+
+/******************** xx000 ********************/
 
 localparam LOAD      = 5'b00_000;
 localparam STORE     = 5'b01_000;
 localparam MADD      = 5'b01_000;
+
+// if funct3(rs1, rs2) is true, then pc <- pc + offset
 localparam BRANCH    = 5'b11_000;
+
+
+/******************** xx001 ********************/
 
 localparam LOAD_FP   = 5'b00_001;
 localparam STORE_FP  = 5'b01_001;
 localparam MSUB      = 5'b10_001;
+
+// jump and link register
+// offset <- { instr[31:20] }
+// offset[0] <- 0
+// rd <- pc + 4
+// pc <- rs1 + offset
 localparam JALR      = 5'b11_001;
 
+
+/******************** xx010 ********************/
+
 localparam NMSUB     = 5'b10_010;
+
+
+/******************** xx011 ********************/
 
 localparam MISC_MEM  = 5'b00_011;
 localparam AMO       = 5'b01_011;
 localparam NMADD     = 5'b10_011;
+
+// jump and link
+// offset <- { instr[31], instr[19:12], instr[20], instr[30:21], 1'b0 } (20 bit offset)
+// rd <- pc + 4
+// pc <- pc + offset
 localparam JAL       = 5'b11_011;
+
+
+/******************** xx100 ********************/
 
 localparam OP_IMM    = 5'b00_100;
 localparam OP        = 5'b01_100;
 localparam OP_FP     = 5'b10_100;
 localparam SYSTEM    = 5'b11_100;
 
-localparam AUICP     = 5'b00_101;
+
+/******************** xx101 ********************/
+
+// add upper immediate to pc (program counter)
+// rd <- pc + { instr[31:12], 12'b0 }
+// pc is offcourse current instruction address.
+localparam AUIPC     = 5'b00_101;
+
+// load upper immediate
+// rd <- { instr[31:12], 12'b0 }
 localparam LUI       = 5'b01_101;
+
+
+/******************** xx110 ********************/
 
 localparam OP_IMM_32 = 5'b00_110;
 localparam OP_32     = 5'b01_110;

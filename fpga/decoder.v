@@ -1,11 +1,13 @@
 module INSTR_DECODER(
+    input wire RST_X,
     input wire [31:0] instr,
     output wire [4:0] rs1, rs2, rd,
     output wire [31:0] imm,
     output wire [2:0] funct3,
     output wire [6:0] funct7,
     output wire [4:0] instr_type,
-    output wire [2:0] instr_format
+    output wire [2:0] instr_format,
+    output wire valid
 );
     assign #5 rs1 = instr[19:15];
     assign #5 rs2 = instr[24:20];
@@ -17,4 +19,6 @@ module INSTR_DECODER(
  
     INSTR_TYPE instr_t(opcode, instr_format, instr_type);
     EXTEND_IMM extend_imm(instr, instr_format, imm);
+    
+    assign #5 valid = RST_X;
 endmodule

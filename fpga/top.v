@@ -4,7 +4,7 @@ module top();
     reg CLK, RST_X;
     initial begin CLK = 1; forever #50 CLK = ~CLK; end
     initial begin RST_X = 0; #125 RST_X = 1;       end
-    initial begin #10000 $finish();                  end
+    initial begin #1000 $finish();                  end
     initial begin $dumpfile("wave.vcd"); $dumpvars(0, p); end
 
     initial begin
@@ -21,12 +21,13 @@ module top();
     end
     
     always @(CLK) begin
-        $write("%d: %d %d %d %d %d %d %d %d %d %d %d\n", 
-                $stime, RST_X, p.cpu.we,
+        $write("%d: %d %d %d %d, %d %d %d, %d %d %d, %d %d, %d\n", 
+                $stime, 
+                RST_X, p.cpu.Id_valid, p.cpu.Ex_valid, p.cpu.Wb_valid,
                 p.cpu.rs1, p.cpu.rs2, p.cpu.rd,
                 $signed(p.cpu.regfile.x[5]), $signed(p.cpu.regfile.x[6]), $signed(p.cpu.regfile.x[7]),
                 $signed(p.cpu.rrs1), $signed(p.cpu.rrs2),
-                $signed(p.cpu.result));
+                $signed(p.cpu.Ex_wd_reg));
     end
 
     PROCESSOR p(CLK, RST_X);
@@ -38,11 +39,11 @@ module PROCESSOR(
     input wire RST_X
 );
     reg [31:0] PC;
-    wire [31:0] instr;
+    wire [31:0] instr, next_pc;
 
     always @(posedge RST_X) PC <= #5 0;
-    always @(posedge CLK) if (RST_X) PC <= #5 PC + 4;
+    always @(posedge CLK) if (RST_X) PC <= next_pc;
 
     IMEM imem(CLK, RST_X, PC, instr);
-    CPU cpu(CLK, RST_X, PC, instr);
+    CPU cpu(CLK, RST_X, PC, instr, next_pc);
 endmodule
