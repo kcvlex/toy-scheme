@@ -42,7 +42,6 @@ auto test_sem_analyzer(std::vector<ASTNode*> nodes) {
 }
 
 void test_asm(std::vector<FunctionCode> fcodes) {
-    // no jump
     auto [ label, is ] = fcodes[1];
     auto os = std::move(is.convert());
 
