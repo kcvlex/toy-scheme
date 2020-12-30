@@ -25,4 +25,4 @@ ast.o: ast.cpp ast.hpp
 	${CXX} ${CXX_FLAGS} -c $< 
 
 clean:
-	rm *.{o,a}
+	rm *.{o,a,gch}

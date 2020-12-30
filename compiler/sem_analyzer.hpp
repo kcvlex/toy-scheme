@@ -43,9 +43,9 @@ private:
 
 struct FunctionCode {
     std::string label;
-    InputCodeStream cs;
+    OutputCodeStream cs;
 
-    FunctionCode(std::string label_arg, InputCodeStream cs_arg);
+    FunctionCode(std::string label_arg, OutputCodeStream cs_arg);
 };
 
 struct SemanticAnalyzer : public ConstNodeVisitor {
@@ -61,14 +61,14 @@ struct SemanticAnalyzer : public ConstNodeVisitor {
 private:
     SymbolTable table;
     std::uint32_t cur_nest;
-    InputCodeStream cur_code;
+    OutputCodeStream cur_code;
     std::vector<FunctionCode> fcodes;
-    std::vector<InputCodeStream> code_buf;
+    std::vector<OutputCodeStream> code_buf;
     std::stack<Operation, std::vector<Operation>> op_stk;
     std::stack<std::string, std::vector<std::string>> label_stk;
 
-    InputCodeStream callee_prolog(const LambdaNode *lambda);
-    InputCodeStream callee_epilog(const LambdaNode *lambda);
+    OutputCodeStream callee_prolog(const LambdaNode *lambda);
+    OutputCodeStream callee_epilog(const LambdaNode *lambda);
 };
 
 struct SimpleInstructionChecker : public ConstNodeVisitor {

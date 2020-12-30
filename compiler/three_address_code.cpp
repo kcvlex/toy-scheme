@@ -91,123 +91,123 @@ std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val) {
 }
 
 
-/******************** OutputCodeStream ********************/
+/******************** InputCodeStream ********************/
 
-OutputCodeStream::OutputCodeStream(buffer_type buf_arg)
+InputCodeStream::InputCodeStream(buffer_type buf_arg)
     : buf(std::move(buf_arg)), cur(std::cbegin(buf))
 {
 }
 
-OutputCodeStream::const_itr OutputCodeStream::get() const {
+InputCodeStream::const_itr InputCodeStream::get() const {
     return cur;
 }
 
-void OutputCodeStream::advance() {
+void InputCodeStream::advance() {
     ++cur;
 }
 
-void OutputCodeStream::advance(std::size_t s) {
+void InputCodeStream::advance(std::size_t s) {
     std::advance(cur, s);
 }
 
-bool OutputCodeStream::finished() const noexcept {
+bool InputCodeStream::finished() const noexcept {
     return cur == std::cend(buf);
 }
 
 
-/******************** InputCodeStream ********************/
+/******************** OutputCodeStream ********************/
 
-InputCodeStream::InputCodeStream() 
+OutputCodeStream::OutputCodeStream() 
     : buf() 
 {
 }
 
-InputCodeStream& InputCodeStream::append_code(ThreeAddressCode code) {
+OutputCodeStream& OutputCodeStream::append_code(ThreeAddressCode code) {
     buf.push_back(std::move(code));
     return *this;
 }
 
-InputCodeStream& InputCodeStream::append_code(const Instructions instr) {
+OutputCodeStream& OutputCodeStream::append_code(const Instructions instr) {
     buf.emplace_back(instr);
     return *this;
 }
 
-InputCodeStream& InputCodeStream::append_code(const Instructions instr,
-                                              const Operand op1)
+OutputCodeStream& OutputCodeStream::append_code(const Instructions instr,
+                                                const Operand op1)
 {
     buf.emplace_back(instr, op1);
     return *this;
 }
 
-InputCodeStream& InputCodeStream::append_code(const Instructions instr,
-                                              const Operand op1,
-                                              const Operand op2)
+OutputCodeStream& OutputCodeStream::append_code(const Instructions instr,
+                                                const Operand op1,
+                                                const Operand op2)
 {
     buf.emplace_back(instr, op1, op2);
     return *this;
 }
 
-InputCodeStream& InputCodeStream::append_code(const Instructions instr,
-                                              const Operand op1,
-                                              const Operand op2,
-                                              const Operand op3)
+OutputCodeStream& OutputCodeStream::append_code(const Instructions instr,
+                                                const Operand op1,
+                                                const Operand op2,
+                                                const Operand op3)
 {
     buf.emplace_back(instr, op1, op2, op3);
     return *this;
 }
 
-InputCodeStream& InputCodeStream::append_lw_code(const Reg dst,
-                                                 const Reg base,
-                                                 const imm_value_type offset)
+OutputCodeStream& OutputCodeStream::append_lw_code(const Reg dst,
+                                                   const Reg base,
+                                                   const imm_value_type offset)
 {
     return append_code(Instructions::LW,
                        reg2operand(dst),
                        refmem2operand(base, offset));
 }
 
-InputCodeStream& InputCodeStream::append_sw_code(const Reg src,
-                                                 const Reg base,
-                                                 const imm_value_type offset) 
+OutputCodeStream& OutputCodeStream::append_sw_code(const Reg src,
+                                                   const Reg base,
+                                                   const imm_value_type offset) 
 {
     return append_code(Instructions::SW,
                        reg2operand(src),
                        refmem2operand(base, offset));
 }
 
-InputCodeStream& InputCodeStream::append_push_code(const Reg src) {
+OutputCodeStream& OutputCodeStream::append_push_code(const Reg src) {
     return this->append_sw_code(src, Reg::sp, 0)
-                .append_code(Instructions::ADDI, 
-                             reg2operand(Reg::sp), 
-                             reg2operand(Reg::sp), 
-                             imm2operand(-4));
+        .append_code(Instructions::ADDI, 
+                     reg2operand(Reg::sp), 
+                     reg2operand(Reg::sp), 
+                     imm2operand(-4));
 }
 
-InputCodeStream& InputCodeStream::append_pop_code(const Reg dst) {
+OutputCodeStream& OutputCodeStream::append_pop_code(const Reg dst) {
     return this->append_lw_code(dst, Reg::sp, 0)
-                .append_code(Instructions::ADDI, 
-                             reg2operand(Reg::sp), 
-                             reg2operand(Reg::sp), 
-                             imm2operand(4));
+        .append_code(Instructions::ADDI, 
+                     reg2operand(Reg::sp), 
+                     reg2operand(Reg::sp), 
+                     imm2operand(4));
 }
 
-InputCodeStream& InputCodeStream::append_assign_code(const Reg dst, const Reg src) {
+OutputCodeStream& OutputCodeStream::append_assign_code(const Reg dst, const Reg src) {
     return this->append_code(Instructions::OR,
                              reg2operand(dst),
                              reg2operand(src),
                              reg2operand(src));
 }
 
-InputCodeStream& InputCodeStream::concat_stream(const InputCodeStream &oth) {
+OutputCodeStream& OutputCodeStream::concat_stream(const OutputCodeStream &oth) {
     buf.insert(std::end(buf), std::cbegin(oth.buf), std::cend(oth.buf));
     return *this;
 }
 
-void InputCodeStream::clear() {
+void OutputCodeStream::clear() {
     buf.clear();
 }
 
-OutputCodeStream InputCodeStream::convert() {
-    return OutputCodeStream(std::move(buf));
+InputCodeStream OutputCodeStream::convert() {
+    return InputCodeStream(std::move(buf));
 }
 
 

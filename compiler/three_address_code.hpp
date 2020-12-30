@@ -62,11 +62,11 @@ struct ThreeAddressCode {
 
 std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val);
 
-struct OutputCodeStream {
+struct InputCodeStream {
     using buffer_type = std::vector<ThreeAddressCode>;
     using const_itr = buffer_type::const_iterator;
 
-    OutputCodeStream(buffer_type buf_arg);
+    InputCodeStream(buffer_type buf_arg);
 
     const_itr get() const;
     void advance();
@@ -79,43 +79,43 @@ private:
 };
 
 // https://stackoverflow.com/questions/18290523/is-a-default-move-constructor-equivalent-to-a-member-wise-move-constructor
-struct InputCodeStream {
-    InputCodeStream();
-    InputCodeStream(const InputCodeStream&) = default;
-    InputCodeStream(InputCodeStream&&) = default;
-    InputCodeStream& operator=(const InputCodeStream&) = default;
-    InputCodeStream& operator=(InputCodeStream&&) = default;
+struct OutputCodeStream {
+    OutputCodeStream();
+    OutputCodeStream(const OutputCodeStream&) = default;
+    OutputCodeStream(OutputCodeStream&&) = default;
+    OutputCodeStream& operator=(const OutputCodeStream&) = default;
+    OutputCodeStream& operator=(OutputCodeStream&&) = default;
 
-    InputCodeStream& append_code(ThreeAddressCode code);
-    InputCodeStream& append_code(const Instructions instr);
-    InputCodeStream& append_code(const Instructions instr, 
-                                 const Operand op1);
-    InputCodeStream& append_code(const Instructions instr, 
-                                 const Operand op1, 
-                                 const Operand op2);
-    InputCodeStream& append_code(const Instructions instr, 
-                                 const Operand op1, 
-                                 const Operand op2,
-                                 const Operand op3);
+    OutputCodeStream& append_code(ThreeAddressCode code);
+    OutputCodeStream& append_code(const Instructions instr);
+    OutputCodeStream& append_code(const Instructions instr, 
+                                  const Operand op1);
+    OutputCodeStream& append_code(const Instructions instr, 
+                                  const Operand op1, 
+                                  const Operand op2);
+    OutputCodeStream& append_code(const Instructions instr, 
+                                  const Operand op1, 
+                                  const Operand op2,
+                                  const Operand op3);
 
     // offset(base) <- src
-    InputCodeStream& append_sw_code(const Reg src, 
-                                    const Reg base, 
-                                    const imm_value_type offset);
+    OutputCodeStream& append_sw_code(const Reg src, 
+                                     const Reg base, 
+                                     const imm_value_type offset);
 
     // dst <- offset(base)
-    InputCodeStream& append_lw_code(const Reg dst, 
-                                    const Reg base, 
-                                    const imm_value_type offset);
+    OutputCodeStream& append_lw_code(const Reg dst, 
+                                     const Reg base, 
+                                     const imm_value_type offset);
 
-    InputCodeStream& append_push_code(const Reg src);
-    InputCodeStream& append_pop_code(const Reg dst);
-    InputCodeStream& append_assign_code(const Reg dst, const Reg src);
-    InputCodeStream& concat_stream(const InputCodeStream &oth);
+    OutputCodeStream& append_push_code(const Reg src);
+    OutputCodeStream& append_pop_code(const Reg dst);
+    OutputCodeStream& append_assign_code(const Reg dst, const Reg src);
+    OutputCodeStream& concat_stream(const OutputCodeStream &oth);
 
     void clear();
 
-    OutputCodeStream convert();
+    InputCodeStream convert();
 
 private:
     std::vector<ThreeAddressCode> buf;

@@ -88,7 +88,7 @@ std::optional<Reg> SymbolTable::find_arg(const std::string &name) const {
 
 /******************** FunctionCode ********************/
 
-FunctionCode::FunctionCode(std::string label_arg, InputCodeStream cs_arg)
+FunctionCode::FunctionCode(std::string label_arg, OutputCodeStream cs_arg)
     : label(std::move(label_arg)), cs(std::move(cs_arg))
 {
 }
@@ -97,7 +97,7 @@ FunctionCode::FunctionCode(std::string label_arg, InputCodeStream cs_arg)
 /******************** SemanticAnalyzer ********************/
 
 SemanticAnalyzer::SemanticAnalyzer() : cur_nest(0) {
-    fcodes.emplace_back("", InputCodeStream());  // sentinel
+    fcodes.emplace_back("", OutputCodeStream());  // sentinel
 }
 
 std::vector<FunctionCode> SemanticAnalyzer::analyze(const std::vector<ASTNode*> &nodes) {
@@ -109,8 +109,8 @@ std::vector<FunctionCode> SemanticAnalyzer::analyze(const std::vector<ASTNode*> 
 
 // Precondition : 0(sp) == return address
 // PostCondition : 0(sp) == empty, 4(bp) == return address
-InputCodeStream SemanticAnalyzer::callee_prolog(const LambdaNode *lambda) {
-    InputCodeStream res;
+OutputCodeStream SemanticAnalyzer::callee_prolog(const LambdaNode *lambda) {
+    OutputCodeStream res;
 
     // Save registers
     {
@@ -139,8 +139,8 @@ InputCodeStream SemanticAnalyzer::callee_prolog(const LambdaNode *lambda) {
 
 // Precondition : 0(sp) == return value
 // Postcondition : 0(sp) == return address
-InputCodeStream SemanticAnalyzer::callee_epilog(const LambdaNode *lambda) {
-    InputCodeStream res;
+OutputCodeStream SemanticAnalyzer::callee_epilog(const LambdaNode *lambda) {
+    OutputCodeStream res;
 
     res.append_lw_code(rv_reg, Reg::sp, 0)  // return value
        .append_code(Instructions::ADDI,

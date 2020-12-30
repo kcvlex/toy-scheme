@@ -29,12 +29,12 @@ auto test_sem_analyzer(std::vector<ASTNode*> nodes) {
     auto res = s_analy.analyze(nodes);
     auto ret = res;
     for (auto func : res) {
-        auto [ label, is ] = func;
-        auto os = std::move(is.convert());
+        auto [ label, os ] = func;
+        auto is = std::move(os.convert());
         std::cout << label << ":" << std::endl;
-        while (!os.finished()) {
-            auto ite = os.get();
-            os.advance();
+        while (!is.finished()) {
+            auto ite = is.get();
+            is.advance();
             std::cout << *ite << std::endl;
         }
     }
