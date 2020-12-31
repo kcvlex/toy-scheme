@@ -10,12 +10,13 @@ all:
 	+$(MAKE) -C compiler
 	+$(MAKE) -C assembler
 	+$(MAKE) prog
+	./prog > gomi/po.txt
 
 prog: main.o ${COMPILER_DIR}/compiler.a ${ASSEMBLER_DIR}/assembler.a
 	${CXX} ${CXX_FLAGS} $^ -o $@
 
 main.o: main.cpp ${HEADERS} ${UTIL_DIR}/enum2str.hpp
-	${CXX} ${CXX_FLAGS} $^ -c $<
+	${CXX} ${CXX_FLAGS} -c $< -o $@
 
 clean:
-	rm *.o ${COMPILER_DIR}/*.{o,a} ${ASSEMBLER_DIR}/*.{o,a} prog
+	rm *.o ${COMPILER_DIR}/*.{o,a,gch} ${ASSEMBLER_DIR}/*.{o,a,gch} prog

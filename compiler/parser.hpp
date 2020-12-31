@@ -16,6 +16,7 @@ private:
     LambdaNode* parse_lambda();
     SymbolNode* parse_symbol();
     ConstantNode* parse_constant();
+    bool is_lambda() const;
 
     TokenStream stream;
 };

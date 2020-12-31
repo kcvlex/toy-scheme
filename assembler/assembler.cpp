@@ -7,36 +7,86 @@
 
 namespace assembler {
 
-Assembler::raw_type Assembler::encode(const compiler::ThreeAddressCode &code) const {
-    // FIXME : label
-
-    switch (code.instr) {
-        case Instructions::LB:    return encode_lb(code);
-        case Instructions::LH:    return encode_lh(code);
-        case Instructions::LW:    return encode_lw(code);
-        case Instructions::SB:    return encode_sb(code);
-        case Instructions::SH:    return encode_sh(code);
-        case Instructions::SW:    return encode_sw(code);
-        case Instructions::ADDI:  return encode_addi(code);
-        case Instructions::SLTI:  return encode_slti(code);
-        case Instructions::SLTIU: return encode_sltiu(code);
-        case Instructions::XORI:  return encode_xori(code);
-        case Instructions::ORI:   return encode_ori(code);
-        case Instructions::ANDI:  return encode_andi(code);
-        // case Instructions::SLLI:  return encode_slli(code);
-        // case Instructions::SRLI:  return encode_srli(code);
-        case Instructions::ADD:   return encode_add(code);
-        case Instructions::SUB:   return encode_sub(code);
-        case Instructions::SLL:   return encode_sll(code);
-        case Instructions::SLT:   return encode_slt(code);
-        case Instructions::SLTU:  return encode_sltu(code);
-        case Instructions::XOR:   return encode_xor(code);
-        case Instructions::SRL:   return encode_srl(code);
-        case Instructions::SRA:   return encode_sra(code);
-        case Instructions::OR:    return encode_or(code);
-        case Instructions::AND:   return encode_and(code);
-        default: assert(false);
+Assembler::Assembler(std::vector<compiler::FunctionCode> fcodes_arg)
+    : cur_addr(0), 
+      fcodes(std::move(fcodes_arg))
+{
+    line_sum = set_label2addr();
+}
+    
+const std::vector<Assembler::raw_type>& Assembler::encode() {
+    encoded.reserve(line_sum);
+    for (auto &[ label, os ] : fcodes) {
+        auto is = std::move(os.convert());
+        while (!is.finished()) {
+            const auto c = *is.get();
+            is.advance();
+            encoded.push_back(encode_three_addr_code(c));
+        }
     }
+    return encoded;
+}
+
+std::size_t Assembler::set_label2addr() {
+    label2addr.resize(fcodes.size());
+    instr_addr_type sum = 2;  // FIXME : 8 means nop * 2
+    cur_addr = 8;
+    for (const auto &[ label, codes ] : fcodes) {
+        if (label != -1) label2addr[label] = sum * 4;
+        sum += codes.entire_size();
+    }
+    for (auto e : label2addr) std::cout << e << std::endl;
+    return sum;
+}
+
+Assembler::raw_type Assembler::encode_three_addr_code(const compiler::ThreeAddressCode &code) {
+    const auto res = [&] {
+        switch (code.instr) {
+            case Instructions::JAL:   return encode_jal(code);
+            case Instructions::JALR:  return encode_jalr(code);
+            case Instructions::LB:    return encode_lb(code);
+            case Instructions::LH:    return encode_lh(code);
+            case Instructions::LW:    return encode_lw(code);
+            case Instructions::SB:    return encode_sb(code);
+            case Instructions::SH:    return encode_sh(code);
+            case Instructions::SW:    return encode_sw(code);
+            case Instructions::ADDI:  return encode_addi(code);
+            case Instructions::SLTI:  return encode_slti(code);
+            case Instructions::SLTIU: return encode_sltiu(code);
+            case Instructions::XORI:  return encode_xori(code);
+            case Instructions::ORI:   return encode_ori(code);
+            case Instructions::ANDI:  return encode_andi(code);
+            // case Instructions::SLLI:  return encode_slli(code);
+            // case Instructions::SRLI:  return encode_srli(code);
+            case Instructions::ADD:   return encode_add(code);
+            case Instructions::SUB:   return encode_sub(code);
+            case Instructions::SLL:   return encode_sll(code);
+            case Instructions::SLT:   return encode_slt(code);
+            case Instructions::SLTU:  return encode_sltu(code);
+            case Instructions::XOR:   return encode_xor(code);
+            case Instructions::SRL:   return encode_srl(code);
+            case Instructions::SRA:   return encode_sra(code);
+            case Instructions::OR:    return encode_or(code);
+            case Instructions::AND:   return encode_and(code);
+            default: assert(false);
+        }
+    }();
+    cur_addr += 4;
+    return res;
+}
+
+Assembler::raw_type Assembler::encode_jal(const compiler::ThreeAddressCode &code) const {
+    compiler::Reg rd;
+    compiler::label_type label;
+    code.read(rd, label);
+    const std::int32_t imm = label2addr[label] - cur_addr;
+    return J_type(0b11'011'11,
+                  get_reg_id(rd),
+                  imm);
+}
+
+Assembler::raw_type Assembler::encode_jalr(const compiler::ThreeAddressCode &code) const {
+    return I_type_aux(0b11'001'11, 0b000, code);
 }
 
 Assembler::raw_type Assembler::encode_lb(const compiler::ThreeAddressCode &code) const {
@@ -258,6 +308,7 @@ Assembler::raw_type Assembler::J_type(const std::int32_t opcode,
                                       const std::int32_t rd,
                                       const std::int32_t imm) const
 {
+    std::cout << "imm = " << imm << std::endl;
     raw_instr_builder builder;
     BitOperation b_imm(imm);
     builder.push_imm(b_imm, 20, 20)
@@ -267,6 +318,29 @@ Assembler::raw_type Assembler::J_type(const std::int32_t opcode,
            .push_reg_id(rd)
            .push_opcode(opcode);
     return builder.val;
+}
+
+Assembler::raw_type Assembler::J_type_aux(const std::int32_t opcode,
+                                          const compiler::ThreeAddressCode &code) const
+{
+    compiler::Reg rd;
+    compiler::label_type label;
+    code.read(rd, label);
+    return J_type(opcode,
+                  get_reg_id(rd),
+                  label2addr[label]);
+}
+
+// FIXME : label
+Assembler::raw_type Assembler::U_type_aux(const std::int32_t opcode,
+                                          const compiler::ThreeAddressCode &code) const
+{
+    compiler::Reg rd;
+    compiler::label_type label;
+    code.read(rd, label);
+    return U_type(opcode,
+                  get_reg_id(rd),
+                  label2addr[label]);
 }
 
 Assembler::raw_type Assembler::R_type_aux(const std::int32_t opcode, 

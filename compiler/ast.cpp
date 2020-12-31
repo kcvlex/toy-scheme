@@ -113,6 +113,8 @@ DebugConstNodeVisitor::DebugConstNodeVisitor()
 }
 
 void DebugConstNodeVisitor::visit(const EvalNode* const node) {
+    write_lines();
+    std::cout << "- EvalNode" << std::endl;
     depth++;
     decltype(auto) children = node->get_children();
     for (auto ch : children) ch->accept(*this);

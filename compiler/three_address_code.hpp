@@ -15,7 +15,8 @@ namespace compiler {
 
 using imm_value_type = std::int16_t;
 using ref_mem_type = std::pair<Reg, imm_value_type>;
-using Operand = std::variant<Reg, imm_value_type, ref_mem_type>;
+using label_type = std::int32_t;  // FIXME
+using Operand = std::variant<Reg, imm_value_type, ref_mem_type, label_type>;
 
 enum class Instructions {
     LUI = 0,
@@ -33,8 +34,7 @@ enum class Instructions {
 Operand reg2operand(const Reg reg);
 Operand imm2operand(const imm_value_type imm);
 Operand refmem2operand(const Reg reg, const imm_value_type offset);
-
-enum class Operation { ADD, SUB, FUNC };
+Operand label2operand(const label_type label);
 
 struct ThreeAddressCode {
     Instructions instr;
@@ -58,6 +58,8 @@ struct ThreeAddressCode {
 
     void read(Reg &r1, Reg &r2, Reg &r3) const;
     void read(Reg &r1, Reg &r2, imm_value_type &imm) const;
+    void read(Reg &r1, Reg &r2, label_type &label) const;
+    void read(Reg &r1, label_type &label) const;
 };
 
 std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val);
@@ -72,6 +74,7 @@ struct InputCodeStream {
     void advance();
     void advance(std::size_t s);
     bool finished() const noexcept;
+    std::size_t entire_size() const noexcept;
 
 private:
     buffer_type buf;
@@ -116,6 +119,7 @@ struct OutputCodeStream {
     void clear();
 
     InputCodeStream convert();
+    std::size_t entire_size() const noexcept;
 
 private:
     std::vector<ThreeAddressCode> buf;

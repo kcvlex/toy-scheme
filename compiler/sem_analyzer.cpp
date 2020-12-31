@@ -1,6 +1,7 @@
 #include "sem_analyzer.hpp"
 #include <cassert>
 #include <iostream>
+#include <limits>
 
 namespace compiler {
 
@@ -8,8 +9,8 @@ namespace {
 
 std::uint32_t label = 0;
 
-std::string get_label() {
-    return "LL" + std::to_string(label++);
+std::uint32_t get_label() {
+    return label++;
 }
 
 constexpr Reg bp_reg = Reg::s0;
@@ -88,8 +89,8 @@ std::optional<Reg> SymbolTable::find_arg(const std::string &name) const {
 
 /******************** FunctionCode ********************/
 
-FunctionCode::FunctionCode(std::string label_arg, OutputCodeStream cs_arg)
-    : label(std::move(label_arg)), cs(std::move(cs_arg))
+FunctionCode::FunctionCode(std::uint32_t label_arg, OutputCodeStream ocs_arg)
+    : label(label_arg), cs(std::move(ocs_arg))
 {
 }
 
@@ -97,13 +98,23 @@ FunctionCode::FunctionCode(std::string label_arg, OutputCodeStream cs_arg)
 /******************** SemanticAnalyzer ********************/
 
 SemanticAnalyzer::SemanticAnalyzer() : cur_nest(0) {
-    fcodes.emplace_back("", OutputCodeStream());  // sentinel
+    fcodes.emplace_back(-1, OutputCodeStream());  // sentinel
 }
 
 std::vector<FunctionCode> SemanticAnalyzer::analyze(const std::vector<ASTNode*> &nodes) {
     for (auto node : nodes) {
         node->accept(*this);
+        if (cur_code.entire_size()) fcodes.emplace_back(get_label(), std::move(cur_code));
+        cur_code.clear();
     }
+
+    // call main
+    OutputCodeStream call_main_os;
+    call_main_os.append_code(Instructions::JAL, 
+                             reg2operand(Reg::zero),
+                             label2operand(fcodes.back().label));
+    FunctionCode call_main(-1, call_main_os);
+    fcodes[0] = call_main;
     return fcodes;
 }
 
@@ -118,9 +129,9 @@ OutputCodeStream SemanticAnalyzer::callee_prolog(const LambdaNode *lambda) {
                         reg2operand(Reg::sp),
                         reg2operand(Reg::sp), 
                         imm2operand(4));
-
-        for (std::size_t i = 0; i < arg_reg_num; i++) {
-            const auto reg = nth_arg_reg(i);
+#if 0
+        for (std::size_t i = 0; i < callee_saved_reg_num; i++) {
+            const auto reg = nth_callee_saved_reg(i);
             res.append_sw_code(reg, Reg::sp, 4 * i);
         }
 
@@ -129,6 +140,7 @@ OutputCodeStream SemanticAnalyzer::callee_prolog(const LambdaNode *lambda) {
                         reg2operand(Reg::sp), 
                         reg2operand(Reg::sp),
                         imm2operand(4 * callee_saved_reg_num));
+#endif
     }
 
     // Arguments
@@ -150,10 +162,12 @@ OutputCodeStream SemanticAnalyzer::callee_epilog(const LambdaNode *lambda) {
 
     // Restore registers
     {
+#if 0
         for (std::size_t i = 0; i < callee_saved_reg_num; i++) {
             const auto reg = nth_callee_saved_reg(callee_saved_reg_num - (i + 1));
             res.append_lw_code(reg, Reg::sp, 4 * i);
         }
+#endif
    
         res.append_lw_code(Reg::s1, bp_reg, 4)
            .append_lw_code(bp_reg, bp_reg, 0); // base_ptr
@@ -167,15 +181,7 @@ OutputCodeStream SemanticAnalyzer::callee_epilog(const LambdaNode *lambda) {
 
 void SemanticAnalyzer::visit(const SymbolNode *node) {
     const auto &symbol = node->get_symbol();
-    if (symbol == "+") {
-        op_stk.push(Operation::ADD);
-        return;
-    } else if (symbol == "-") {
-        op_stk.push(Operation::SUB);
-        return;
-    }
-
-    op_stk.push(Operation::FUNC);
+    if (symbol == "+" || symbol == "-") return;
 
     const auto reg = table.find_arg(symbol);
     if (reg.has_value()) {
@@ -221,22 +227,35 @@ void SemanticAnalyzer::visit(const EvalNode *node) {
 
     SimpleInstructionChecker checker;
     op_node->accept(checker);
-    const auto is_simple = checker.get();  // true if ADD or SUB
-
-    // save return address, arguments
-    if (!is_simple) {
-        cur_code.append_push_code(Reg::ra);
-        for (std::size_t i = 0; i < arg_reg_num; i++) cur_code.append_push_code(nth_arg_reg(i));
-    }
+    const auto res = checker.res.value();
 
     op_node->accept(*this);
-    const auto op = op_stk.top();
-    op_stk.pop();
+        
+    cur_code.append_push_code(rv_reg);  // save a0
 
-    if (op == Operation::FUNC) {
-        assert(!is_simple);
-        // rv has the instruction address
+    if (auto p = std::get_if<BuiltinOperation>(&res)) {
+        // Number of the operand must be 2
+
+        // Eval op1
+        children[1]->accept(*this);
         cur_code.append_push_code(rv_reg);
+
+        // Eval op2
+        children[2]->accept(*this);
+        cur_code.append_push_code(rv_reg);
+
+        const Instructions instr = (*p == BuiltinOperation::ADD ? Instructions::ADD : Instructions::SUB);
+        cur_code.append_pop_code(Reg::t2)
+                .append_pop_code(Reg::t1)
+                .append_pop_code(Reg::a0)  // restore a0
+                .append_code(instr,
+                             reg2operand(rv_reg),
+                             reg2operand(Reg::t1),
+                             reg2operand(Reg::t2));
+    } else {
+        cur_code.append_push_code(Reg::ra);
+#if 0
+        for (std::size_t i = 0; i < arg_reg_num; i++) cur_code.append_push_code(nth_arg_reg(i));
 
         // eval arguments
         std::size_t r_cnt = 0;
@@ -252,53 +271,87 @@ void SemanticAnalyzer::visit(const EvalNode *node) {
             const auto reg = nth_arg_reg(r_cnt - (i + 1));
             cur_code.append_push_code(reg);
         }
+#else
+        for (std::size_t i = 1; i != children.size(); i++) {
+            const std::size_t idx = children.size() - i;
+            children[idx]->accept(*this);
+            cur_code.append_assign_code(nth_arg_reg(idx), rv_reg);
+        }
+        cur_code.append_pop_code(Reg::t0);  // restore a0
+#endif
 
         // load function address
-        cur_code.append_pop_code(Reg::t0)
-                .append_code(Instructions::JALR, 
-                             reg2operand(Reg::t0), 
-                             reg2operand(Reg::ra), 
-                             reg2operand(Reg::zero));
+        if (auto p = std::get_if<lambda_function_type>(&res)) {
+            cur_code.append_pop_code(Reg::zero)  // Unnecessary value
+                    .append_code(Instructions::JAL,
+                                 reg2operand(Reg::t0),  // FIXME : Reg::zero ??
+                                 label2operand(*p));
+        } else if (auto p = std::get_if<symbol_type>(&res)) {
+            const auto reg = table.find_arg((*p)->get_symbol()).value();
+            cur_code.append_pop_code(Reg::zero)  // Unnecessary value
+                    .append_code(Instructions::JALR,
+                                 reg2operand(Reg::t0),  // FIXME : Reg::zero ??
+                                 reg2operand(reg),
+                                 imm2operand(0));
 
+        } else if (auto p = std::get_if<eval_type>(&res)) {
+            cur_code.append_pop_code(Reg::t1)  // jump address
+                    .append_code(Instructions::JALR,
+                                 reg2operand(Reg::t0),  // FIXME : Reg::zero ??
+                                 reg2operand(Reg::t1),
+                                 imm2operand(0));
+        }
+
+#if 0
         // restore arguments, ra
         for (std::size_t i = 0; i < arg_reg_num; i++) {
             const auto reg = nth_arg_reg(arg_reg_num - (i + 1));
             cur_code.append_pop_code(reg);
         }
+#endif
         cur_code.append_pop_code(Reg::ra);
-    } else {
-        assert(is_simple);
-        
-        // Number of the operand must be 2
-
-        // Eval op1
-        children[1]->accept(*this);
-        cur_code.append_push_code(rv_reg);
-
-        // Eval op2
-        children[2]->accept(*this);
-        cur_code.append_push_code(rv_reg);
-
-        const Instructions instr = (op == Operation::ADD ? Instructions::ADD : Instructions::SUB);
-        cur_code.append_pop_code(Reg::t2)
-                .append_pop_code(Reg::t1)
-                .append_code(instr,
-                             reg2operand(rv_reg),
-                             reg2operand(Reg::t1),
-                             reg2operand(Reg::t2));
     }
 }
 
 
 /******************** SimpleInstructionChecker ********************/
 
-void SimpleInstructionChecker::visit(const EvalNode *node) { res = false; }
-void SimpleInstructionChecker::visit(const LambdaNode *node) { res = false; }
-void SimpleInstructionChecker::visit(const SymbolNode *node) {
-    if (node->get_symbol() == "+" || node->get_symbol() == "-") res = true;
-    else res = false;
+namespace {
+
+operation_type make_builtin_operation(const BuiltinOperation op) {
+    return operation_type(std::in_place_type<BuiltinOperation>, op);
 }
-void SimpleInstructionChecker::visit(const ConstantNode *node) { assert(false); }
-bool SimpleInstructionChecker::get() const noexcept { return res; }
+
+operation_type make_lambda_function(const lambda_function_type lf) {
+    return operation_type(std::in_place_type<lambda_function_type>, lf);
+}
+
+operation_type make_symbol_type(const symbol_type node) {
+    return operation_type(std::in_place_type<symbol_type>, node);
+}
+
+operation_type make_eval() {
+    return operation_type(std::in_place_type<eval_type>);
+}
+
+}  // anonymous
+
+void SimpleInstructionChecker::visit(const EvalNode *node) { 
+    res = std::optional(make_eval());
+}
+void SimpleInstructionChecker::visit(const LambdaNode *node) {
+    res = std::optional(make_lambda_function(label));
+}
+void SimpleInstructionChecker::visit(const SymbolNode *node) {
+    if (node->get_symbol() == "+") {
+        res = std::optional(make_builtin_operation(BuiltinOperation::ADD));
+    } else if (node->get_symbol() == "-") {
+        res = std::optional(make_builtin_operation(BuiltinOperation::SUB));
+    } else {
+        res = std::optional(make_symbol_type(node));
+    }
+}
+void SimpleInstructionChecker::visit(const ConstantNode *node) { 
+}
 
 }

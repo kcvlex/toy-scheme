@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <string>
-#include "compiler/three_address_code.hpp"
+#include "compiler/sem_analyzer.hpp"
 
 namespace assembler {
 
@@ -11,10 +11,30 @@ using compiler::Instructions;
 
 struct Assembler {
     using raw_type = std::uint32_t;
-
-    raw_type encode(const compiler::ThreeAddressCode &code) const;
+    using instr_addr_type = std::uint16_t;  // FIXME : uint32_t ??
+    
+    Assembler() = delete;
+    Assembler(std::vector<compiler::FunctionCode> fcodes_arg);
+    Assembler(const Assembler&) = default;
+    Assembler(Assembler&&) = default;
+    Assembler& operator=(const Assembler&) = default;
+    Assembler& operator=(Assembler&&) = default;
+    
+    const std::vector<raw_type>& encode();
+    // std::size_t get_line_num() const noexcept;
 
 private:
+    instr_addr_type cur_addr;
+    std::vector<compiler::FunctionCode> fcodes;
+    std::vector<raw_type> encoded;
+    std::vector<instr_addr_type> label2addr;
+    std::size_t line_sum;
+    
+    std::size_t set_label2addr();
+    raw_type encode_three_addr_code(const compiler::ThreeAddressCode &code);
+
+    raw_type encode_jal(const compiler::ThreeAddressCode &code) const;
+    raw_type encode_jalr(const compiler::ThreeAddressCode &code) const;
     raw_type encode_lb(const compiler::ThreeAddressCode &code) const;
     raw_type encode_lh(const compiler::ThreeAddressCode &code) const;
     raw_type encode_lw(const compiler::ThreeAddressCode &code) const;
@@ -81,6 +101,9 @@ private:
     raw_type J_type(const std::int32_t opcode,
                     const std::int32_t rd,
                     const std::int32_t imm) const;
+
+    raw_type U_type_aux(const std::int32_t opcode,
+                        const compiler::ThreeAddressCode &code) const;
     
     raw_type R_type_aux(const std::int32_t opcode, 
                         const std::int32_t funct3,
@@ -93,6 +116,9 @@ private:
 
     raw_type S_type_aux(const std::int32_t opcode,
                         const std::int32_t funct3,
+                        const compiler::ThreeAddressCode &code) const;
+
+    raw_type J_type_aux(const std::int32_t opcode,
                         const compiler::ThreeAddressCode &code) const;
 };
 

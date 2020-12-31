@@ -42,11 +42,17 @@ private:
 };
 
 struct FunctionCode {
-    std::string label;
+    std::uint32_t label;
     OutputCodeStream cs;
 
-    FunctionCode(std::string label_arg, OutputCodeStream cs_arg);
+    FunctionCode(std::uint32_t label_arg, OutputCodeStream ocs_arg);
 };
+
+enum class BuiltinOperation { ADD, SUB, };
+struct eval_type { };
+using lambda_function_type = std::uint32_t;  // label
+using symbol_type = std::add_pointer_t<const SymbolNode>;
+using operation_type = std::variant<BuiltinOperation, lambda_function_type, symbol_type, eval_type>;
 
 struct SemanticAnalyzer : public ConstNodeVisitor {
     SemanticAnalyzer();
@@ -64,8 +70,6 @@ private:
     OutputCodeStream cur_code;
     std::vector<FunctionCode> fcodes;
     std::vector<OutputCodeStream> code_buf;
-    std::stack<Operation, std::vector<Operation>> op_stk;
-    std::stack<std::string, std::vector<std::string>> label_stk;
 
     OutputCodeStream callee_prolog(const LambdaNode *lambda);
     OutputCodeStream callee_epilog(const LambdaNode *lambda);
@@ -76,11 +80,7 @@ struct SimpleInstructionChecker : public ConstNodeVisitor {
     virtual void visit(const LambdaNode *node) override;
     virtual void visit(const SymbolNode *node) override;
     virtual void visit(const ConstantNode *node) override;
-
-    bool get() const noexcept;
-
-private:
-    bool res = true;
+    std::optional<operation_type> res = std::optional<operation_type>(std::nullopt);
 };
 
 }

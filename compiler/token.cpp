@@ -52,6 +52,10 @@ TokenStream::token_iterator TokenStream::head() const {
     return cur;
 }
 
+TokenStream::token_iterator TokenStream::lookup(const std::size_t n) const {
+    return std::next(head(), n);
+}
+
 TokenStream::token_iterator TokenStream::advance() {
     if (finished()) assert(false);
     const auto ret = cur;

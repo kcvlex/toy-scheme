@@ -14,6 +14,7 @@ struct TokenStream {
     TokenStream(raw_tokens_type token_list_arg);
 
     token_iterator head() const;
+    token_iterator lookup(const std::size_t n) const;
     token_iterator advance();
     token_iterator eat(const raw_token_type &token);
     bool finished() const;

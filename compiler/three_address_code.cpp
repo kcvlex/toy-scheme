@@ -18,6 +18,10 @@ Operand refmem2operand(const Reg reg, const imm_value_type offset) {
     return Operand(std::in_place_index<2>, std::make_pair(reg, offset));
 }
 
+Operand label2operand(const label_type label) {
+    return Operand(std::in_place_index<3>, label);
+}
+
 
 /******************** ThreeAddressCode ********************/
 
@@ -70,6 +74,17 @@ void ThreeAddressCode::read(Reg &r1, Reg &r2, imm_value_type &imm) const {
     std::tie(r2, imm) = std::get<ref_mem_type>(op2.value());
 }
 
+void ThreeAddressCode::read(Reg &r1, Reg &r2, label_type &label) const {
+    r1 = std::get<Reg>(op1.value());
+    r2 = std::get<Reg>(op2.value());
+    label = std::get<label_type>(op3.value());
+}
+
+void ThreeAddressCode::read(Reg &r1, label_type &label) const {
+    r1 = std::get<Reg>(op1.value());
+    label = std::get<label_type>(op2.value());
+}
+
 
 std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val) {
     os << util::to_str(val.instr);
@@ -85,6 +100,8 @@ std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val) {
         } else if (auto p = std::get_if<2>(&value)) {
             auto [ reg, imm ] = *p;
             os << imm << "(" << util::to_str(reg) << ")";
+        } else if (auto p = std::get_if<3>(&value)) {
+            os << "LL" << *p << ":";
         }
     }
     return os;
@@ -100,6 +117,10 @@ InputCodeStream::InputCodeStream(buffer_type buf_arg)
 
 InputCodeStream::const_itr InputCodeStream::get() const {
     return cur;
+}
+
+std::size_t InputCodeStream::entire_size() const noexcept {
+    return buf.size();
 }
 
 void InputCodeStream::advance() {
@@ -204,6 +225,10 @@ OutputCodeStream& OutputCodeStream::concat_stream(const OutputCodeStream &oth) {
 
 void OutputCodeStream::clear() {
     buf.clear();
+}
+
+std::size_t OutputCodeStream::entire_size() const noexcept {
+    return buf.size();
 }
 
 InputCodeStream OutputCodeStream::convert() {

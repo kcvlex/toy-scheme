@@ -31,7 +31,7 @@ auto test_sem_analyzer(std::vector<ASTNode*> nodes) {
     for (auto func : res) {
         auto [ label, os ] = func;
         auto is = std::move(os.convert());
-        std::cout << label << ":" << std::endl;
+        std::cout << "LL" << label << ":" << std::endl;
         while (!is.finished()) {
             auto ite = is.get();
             is.advance();
@@ -42,21 +42,17 @@ auto test_sem_analyzer(std::vector<ASTNode*> nodes) {
 }
 
 void test_asm(std::vector<FunctionCode> fcodes) {
-    auto [ label, is ] = fcodes[1];
-    auto os = std::move(is.convert());
-
-    assembler::Assembler assm;
+    assembler::Assembler assm(fcodes);
+    auto res = assm.encode();
     std::cout << "p.imem.mem[0] = 32'd0;" << std::endl;
-    for (std::size_t idx = 1; !os.finished(); idx++) {
-        auto ite = os.get();
-        os.advance();
-        auto res = assm.encode(*ite);
-        std::cout << "p.imem.mem[" << idx << "] = 32'b" << std::bitset<32>(res) << ";" << std::endl;
+    std::cout << "p.imem.mem[1] = 32'd0;" << std::endl;
+    for (std::size_t idx = 0; idx != res.size(); idx++) {
+        std::cout << "p.imem.mem[" << idx + 2 << "] = 32'b" << std::bitset<32>(res[idx]) << ";" << std::endl;
     }
 }
 
 int main() {
-    std::string code = "(lambda (f a b) \n  (+ a (+ b (+ 1 2))))\n";
+    std::string code = "((lambda (f a b) \n  (+ a (+ b (+ 1 2)))) 42 43 44)\n";
     auto root = test_parser_and_visitor(code);
     std::vector<ASTNode*> nodes = { root };
     auto fcodes = test_sem_analyzer(nodes);
