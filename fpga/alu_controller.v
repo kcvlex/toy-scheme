@@ -23,7 +23,6 @@ module ALU_CONTROLLER(
     reg [31:0] r_lhs, r_rhs;
     reg [4:0] r_op;
     reg r_store, r_load, r_we_reg, r_halt, r_jump;
-    reg [31:0] prev_res;
 
     always @(*) begin
         if (!RST_X) begin
@@ -48,7 +47,8 @@ module ALU_CONTROLLER(
                     
                     // operator
                     case (funct3) 
-                        FUNCT3_ADD:  r_op <= #5 (funct7 == FUNCT7_ADD ? ADD : SUB);  // FIXME
+                        FUNCT3_ADD:  r_op <= #5 (instr_type == OP_IMM ? ADD :
+                                                 funct7 == FUNCT7_ADD ? ADD : SUB);  // FIXME
                         FUNCT3_SLL:  r_op <= #5 SLL;
                         FUNCT3_SLT:  r_op <= #5 SLT;
                         FUNCT3_SLTU: r_op <= #5 SLTU;
@@ -103,8 +103,6 @@ module ALU_CONTROLLER(
         .op(r_op),
         .res(alu_res)
     );
-
-    always @(alu_res) prev_res <= #5 alu_res;
 
     assign #5 store          = ((RST_X && r_store) ? 1 : 0);
     assign #5 load           = ((RST_X && r_load) ? 1 : 0);

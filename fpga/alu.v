@@ -6,8 +6,8 @@ module ALU(
 );
     `include "alu.hv"
 
-    wire [31:0] s_lhs = $signed(lhs);
-    wire [31:0] s_rhs = $signed(rhs);
+    wire signed [31:0] s_lhs = $signed(lhs);
+    wire signed [31:0] s_rhs = $signed(rhs);
     reg [31:0] r_res;
 
     always @(*) begin

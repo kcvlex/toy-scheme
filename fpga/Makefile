@@ -1,7 +1,7 @@
 FILES=$(shell ls *\.v)
 
-all: proc
-	./proc
+all: prog
+	./prog
 
-proc: ${FILES}
-	iverilog ${FILES} -o proc
+prog: ${FILES}
+	iverilog ${FILES} -o prog

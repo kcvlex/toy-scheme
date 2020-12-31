@@ -11,6 +11,7 @@ module REGFILE(
         x[0] <= #5 0;
         x[1] <= #5 0;  // return address(link register)
         x[2] <= #5 0;  // stack pointer
+        x[8] <= #5 0;  // base pointer
     end
 
     always @(negedge CLK) if (RST_X && we && rd != 0) x[rd] <= #5 wd;
