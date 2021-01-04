@@ -1,5 +1,6 @@
 #include <iostream>
 #include <bitset>
+#include <limits>
 #include "compiler/token.hpp"
 #include "compiler/parser.hpp"
 #include "compiler/three_address_code.hpp"
@@ -28,6 +29,7 @@ auto test_sem_analyzer(std::vector<ASTNode*> nodes) {
     SemanticAnalyzer s_analy;
     auto res = s_analy.analyze(nodes);
     auto ret = res;
+    std::size_t line = 0;
     for (auto func : res) {
         auto [ label, os ] = func;
         auto is = std::move(os.convert());
@@ -35,19 +37,37 @@ auto test_sem_analyzer(std::vector<ASTNode*> nodes) {
         while (!is.finished()) {
             auto ite = is.get();
             is.advance();
-            std::cout << *ite << std::endl;
+            std::cout << line << "\t" << *ite << std::endl;
+            line += 4;
         }
     }
     return ret;
 }
 
+struct Printer {
+    std::size_t idx = 0;
+
+    ~Printer() {
+        std::cout << "end\n"
+                  << "always @(p.PC) begin if (p.PC[11:2] == 0) $finish(); end\n";
+    }
+
+    Printer& print(std::uint32_t instr) {
+        std::cout << "p.imem.mem[" 
+                  << idx++ 
+                  << "] = 32'b" 
+                  << std::bitset<32>(instr).to_string() 
+                  << ";\n";
+        return *this;
+    }
+};
+
 void test_asm(std::vector<FunctionCode> fcodes) {
     assembler::Assembler assm(fcodes);
     auto res = assm.encode();
-    std::cout << "p.imem.mem[0] = 32'd0;" << std::endl;
-    std::cout << "p.imem.mem[1] = 32'd0;" << std::endl;
+    Printer printer;
     for (std::size_t idx = 0; idx != res.size(); idx++) {
-        std::cout << "p.imem.mem[" << idx + 2 << "] = 32'b" << std::bitset<32>(res[idx]) << ";" << std::endl;
+        printer.print(res[idx]);
     }
 }
 

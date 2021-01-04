@@ -9,16 +9,16 @@ module INSTR_DECODER(
     output wire [2:0] instr_format,
     output wire valid
 );
-    assign #5 rs1 = instr[19:15];
-    assign #5 rs2 = instr[24:20];
-    assign #5 rd = instr[11:7];
-    assign #5 funct3 = instr[14:12];
-    assign #5 funct7 = instr[31:25];
+    assign #1 funct7 = instr[31:25];
+    assign #1 rs2    = instr[24:20];
+    assign #1 rs1    = instr[19:15];
+    assign #1 funct3 = instr[14:12];
+    assign #1 rd     = instr[11:7];
     
-    wire [4:0] #5 opcode = instr[6:2];
+    wire [4:0] #1 opcode = instr[6:2];
  
-    INSTR_TYPE instr_t(opcode, instr_format, instr_type);
+    INSTR_TYPE instr_t(CLK, opcode, instr_format, instr_type);
     EXTEND_IMM extend_imm(instr, instr_format, imm);
-    
-    assign #5 valid = RST_X;
+
+    assign #1 valid = RST_X;
 endmodule

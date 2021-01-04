@@ -11,9 +11,9 @@ module SIMPLE_SDRAM(
 );
     reg [31:0] mem[0:65535];
 
-    always @(negedge CLK) if (we && RST_X && valid_in) mem[addr[14:2]] <= #5 wd;
+    always @(negedge CLK) if (we && RST_X && valid_in) mem[addr[31:2]] <= #1 wd;
 
-    assign #5 loaded = mem[addr[14:2]];
-    assign #5 valid_out = ((RST_X && valid_in) ? 1 : 0);
-    assign #5 rd_out = rd_in;
+    assign #1 loaded = ((RST_X && valid_in) ? mem[addr[31:2]] : 0);
+    assign #1 valid_out = ((RST_X && valid_in) ? 1 : 0);
+    assign #1 rd_out = rd_in;
 endmodule

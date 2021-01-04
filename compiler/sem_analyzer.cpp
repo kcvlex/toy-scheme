@@ -81,7 +81,7 @@ SymboledValue* SymbolTable::find(const std::string &name) const {
 std::optional<Reg> SymbolTable::find_arg(const std::string &name) const {
     for (std::size_t i = 0; i != regs.size(); i++) {
         if (regs[i] == nullptr) break;
-        if (regs[i]->name == name) return std::make_optional(nth_arg_reg(i));
+        if (regs[i]->name == name) return std::make_optional(nth_arg_reg(i + 1));  // FIXME : a0
     }
     return std::optional<Reg>(std::nullopt);
 }
@@ -109,27 +109,46 @@ std::vector<FunctionCode> SemanticAnalyzer::analyze(const std::vector<ASTNode*> 
     }
 
     // call main
-    OutputCodeStream call_main_os;
-    call_main_os.append_code(Instructions::JAL, 
-                             reg2operand(Reg::zero),
-                             label2operand(fcodes.back().label));
-    FunctionCode call_main(-1, call_main_os);
+    // FIXME : address 0 means `exit`
+    OutputCodeStream call_main_ocs;
+    call_main_ocs.append_nop_code()
+                 .append_nop_code()
+                 .append_nop_code()
+                 .append_code(Instructions::JAL, 
+                              reg2operand(Reg::ra),
+                              label2operand(fcodes.back().label))
+                 .append_assign_code(Reg::ra,
+                                     Reg::zero)
+                 .append_code(Instructions::JALR,
+                              reg2operand(Reg::zero),
+                              reg2operand(Reg::ra),
+                              imm2operand(0));
+    FunctionCode call_main(-1, call_main_ocs);
     fcodes[0] = call_main;
     return fcodes;
 }
 
-// Precondition : 0(sp) == return address
-// PostCondition : 0(sp) == empty, 4(bp) == return address
+// Precondition : Reg::ra == return address
+// PostCondition : 0(sp) == empty, 0(bp) == return address
 OutputCodeStream SemanticAnalyzer::callee_prolog(const LambdaNode *lambda) {
     OutputCodeStream res;
 
     // Save registers
     {
+        res.append_push_code(Reg::sp)  // save stack pointer
+           .append_push_code(Reg::ra)  // save return address
+           .append_push_code(bp_reg)   // save base pointer
+           .append_assign_code(bp_reg, Reg::sp);  // update base pointer
+
+
+        /* FIXME : is this necessarry ??
         res.append_code(Instructions::ADDI,
                         reg2operand(Reg::sp),
                         reg2operand(Reg::sp), 
                         imm2operand(4));
+        */
 #if 0
+        // FIXME : base_pointer == Reg::s0
         for (std::size_t i = 0; i < callee_saved_reg_num; i++) {
             const auto reg = nth_callee_saved_reg(i);
             res.append_sw_code(reg, Reg::sp, 4 * i);
@@ -149,16 +168,10 @@ OutputCodeStream SemanticAnalyzer::callee_prolog(const LambdaNode *lambda) {
     return res;
 }
 
-// Precondition : 0(sp) == return value
-// Postcondition : 0(sp) == return address
+// Precondition : rv_reg == return value, 0(bp_reg) == return address
+// Postcondition : Reg::ra == return address
 OutputCodeStream SemanticAnalyzer::callee_epilog(const LambdaNode *lambda) {
     OutputCodeStream res;
-
-    res.append_lw_code(rv_reg, Reg::sp, 0)  // return value
-       .append_code(Instructions::ADDI,
-                    reg2operand(Reg::sp),
-                    reg2operand(bp_reg),
-                    imm2operand(4));     // restore sp
 
     // Restore registers
     {
@@ -169,13 +182,21 @@ OutputCodeStream SemanticAnalyzer::callee_epilog(const LambdaNode *lambda) {
         }
 #endif
    
-        res.append_lw_code(Reg::s1, bp_reg, 4)
-           .append_lw_code(bp_reg, bp_reg, 0); // base_ptr
+        res.append_assign_code(Reg::t0, bp_reg)
+           .append_lw_code(Reg::ra, Reg::t0, 12)
+           .append_lw_code(Reg::sp, Reg::t0, 8)
+           .append_lw_code(bp_reg, Reg::t0, 4);
+
     }
 
     // Arguments
     table.restore_arg_mapping();
 
+    // return
+    res.append_code(Instructions::JALR,
+                    reg2operand(Reg::zero),
+                    reg2operand(Reg::ra),
+                    imm2operand(0));
     return res;
 }
 
@@ -272,32 +293,32 @@ void SemanticAnalyzer::visit(const EvalNode *node) {
             cur_code.append_push_code(reg);
         }
 #else
+        // eval arguments
         for (std::size_t i = 1; i != children.size(); i++) {
             const std::size_t idx = children.size() - i;
             children[idx]->accept(*this);
             cur_code.append_assign_code(nth_arg_reg(idx), rv_reg);
         }
-        cur_code.append_pop_code(Reg::t0);  // restore a0
 #endif
 
         // load function address
         if (auto p = std::get_if<lambda_function_type>(&res)) {
             cur_code.append_pop_code(Reg::zero)  // Unnecessary value
                     .append_code(Instructions::JAL,
-                                 reg2operand(Reg::t0),  // FIXME : Reg::zero ??
+                                 reg2operand(Reg::ra),
                                  label2operand(*p));
         } else if (auto p = std::get_if<symbol_type>(&res)) {
             const auto reg = table.find_arg((*p)->get_symbol()).value();
             cur_code.append_pop_code(Reg::zero)  // Unnecessary value
                     .append_code(Instructions::JALR,
-                                 reg2operand(Reg::t0),  // FIXME : Reg::zero ??
+                                 reg2operand(Reg::ra),
                                  reg2operand(reg),
                                  imm2operand(0));
 
         } else if (auto p = std::get_if<eval_type>(&res)) {
             cur_code.append_pop_code(Reg::t1)  // jump address
                     .append_code(Instructions::JALR,
-                                 reg2operand(Reg::t0),  // FIXME : Reg::zero ??
+                                 reg2operand(Reg::ra),
                                  reg2operand(Reg::t1),
                                  imm2operand(0));
         }

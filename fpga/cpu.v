@@ -17,7 +17,7 @@ module CPU(
 
     /* Exec */
     wire Ex_store, Ex_load;
-    wire [31:0] Ex_wd_reg, Ex_wd_mem;
+    wire [31:0] Ex_wd_reg, Ex_wd_mem, Ex_ls_mem_addr;
     wire [4:0] Ex_rd;
     wire Ex_we_reg, Ex_valid;
 
@@ -56,7 +56,7 @@ module CPU(
     );
 
     /*
-    assign #5 we = ((instr_format == R_TYPE ||
+    assign #1 we = ((instr_format == R_TYPE ||
                      instr_format == I_TYPE ||
                      instr_format == U_TYPE ||
                      instr_format == J_TYPE) ? 1'b1 : 1'b0);
@@ -77,8 +77,9 @@ module CPU(
         .load(Ex_load),
         .we_reg(Ex_we_reg),
         .halt(halt),
-        .store_mem_data(Ex_wd_mem),
-        .write_reg_data(Ex_wd_reg), 
+        .wd_mem(Ex_wd_mem),
+        .ls_mem_addr(Ex_ls_mem_addr),
+        .wd_reg(Ex_wd_reg),
         .next_pc(next_pc),
         .valid(Ex_valid)
     );
@@ -86,9 +87,9 @@ module CPU(
     SIMPLE_SDRAM sdram(
         .CLK(CLK),
         .RST_X(RST_X),
-        .addr(Ex_wd_reg),
+        .addr(Ex_ls_mem_addr),
         .wd(Ex_wd_mem),
-        .we(Ex_load),
+        .we(Ex_store),
         .valid_in(Ex_valid),
         .rd_in(Ex_rd),
         .loaded(Wb_wd_reg),
@@ -96,8 +97,8 @@ module CPU(
         .rd_out(Wb_rd)
     );
 
-    assign #5 we_reg = ((Wb_valid && RST_X && Ex_we_reg) ? 1 : 0);
-    assign #5 wd_reg = (we_reg ? (Ex_load ? Wb_wd_reg : Ex_wd_reg) : 0);
+    assign #1 we_reg = (Wb_valid && RST_X && Ex_we_reg);
+    assign #1 wd_reg = (Ex_load ? Wb_wd_reg : Ex_wd_reg);
 endmodule
 
 module MUX(
@@ -105,5 +106,5 @@ module MUX(
     input wire [31:0] v1, v2,
     output wire v
 );
-    assign #5 v = (cond ? v1 : v2);
+    assign #1 v = (cond ? v1 : v2);
 endmodule

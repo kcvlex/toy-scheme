@@ -14,12 +14,8 @@ Operand imm2operand(const imm_value_type imm) {
     return Operand(std::in_place_index<1>, imm);
 }
 
-Operand refmem2operand(const Reg reg, const imm_value_type offset) {
-    return Operand(std::in_place_index<2>, std::make_pair(reg, offset));
-}
-
 Operand label2operand(const label_type label) {
-    return Operand(std::in_place_index<3>, label);
+    return Operand(std::in_place_index<2>, label);
 }
 
 
@@ -63,15 +59,9 @@ void ThreeAddressCode::read(Reg &r1, Reg &r2, Reg &r3) const {
 }
 
 void ThreeAddressCode::read(Reg &r1, Reg &r2, imm_value_type &imm) const {
-    try {
-        r1 = std::get<Reg>(op1.value());
-        r2 = std::get<Reg>(op2.value());
-        imm = std::get<imm_value_type>(op3.value());
-        return;
-    } catch (std::exception&) { }
-
     r1 = std::get<Reg>(op1.value());
-    std::tie(r2, imm) = std::get<ref_mem_type>(op2.value());
+    r2 = std::get<Reg>(op2.value());
+    imm = std::get<imm_value_type>(op3.value());
 }
 
 void ThreeAddressCode::read(Reg &r1, Reg &r2, label_type &label) const {
@@ -98,9 +88,6 @@ std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val) {
         } else if (auto p = std::get_if<1>(&value)) {
             os << int(*p);
         } else if (auto p = std::get_if<2>(&value)) {
-            auto [ reg, imm ] = *p;
-            os << imm << "(" << util::to_str(reg) << ")";
-        } else if (auto p = std::get_if<3>(&value)) {
             os << "LL" << *p << ":";
         }
     }
@@ -183,7 +170,8 @@ OutputCodeStream& OutputCodeStream::append_lw_code(const Reg dst,
 {
     return append_code(Instructions::LW,
                        reg2operand(dst),
-                       refmem2operand(base, offset));
+                       reg2operand(base),
+                       imm2operand(offset));
 }
 
 OutputCodeStream& OutputCodeStream::append_sw_code(const Reg src,
@@ -191,24 +179,25 @@ OutputCodeStream& OutputCodeStream::append_sw_code(const Reg src,
                                                    const imm_value_type offset) 
 {
     return append_code(Instructions::SW,
+                       reg2operand(base),
                        reg2operand(src),
-                       refmem2operand(base, offset));
+                       imm2operand(offset));
 }
 
 OutputCodeStream& OutputCodeStream::append_push_code(const Reg src) {
     return this->append_sw_code(src, Reg::sp, 0)
-        .append_code(Instructions::ADDI, 
-                     reg2operand(Reg::sp), 
-                     reg2operand(Reg::sp), 
-                     imm2operand(-4));
+                .append_code(Instructions::ADDI, 
+                             reg2operand(Reg::sp), 
+                             reg2operand(Reg::sp), 
+                             imm2operand(-4));
 }
 
 OutputCodeStream& OutputCodeStream::append_pop_code(const Reg dst) {
-    return this->append_lw_code(dst, Reg::sp, 0)
-        .append_code(Instructions::ADDI, 
-                     reg2operand(Reg::sp), 
-                     reg2operand(Reg::sp), 
-                     imm2operand(4));
+    return this->append_lw_code(dst, Reg::sp, 4)
+                .append_code(Instructions::ADDI, 
+                             reg2operand(Reg::sp), 
+                             reg2operand(Reg::sp), 
+                             imm2operand(4));
 }
 
 OutputCodeStream& OutputCodeStream::append_assign_code(const Reg dst, const Reg src) {
@@ -216,6 +205,13 @@ OutputCodeStream& OutputCodeStream::append_assign_code(const Reg dst, const Reg 
                              reg2operand(dst),
                              reg2operand(src),
                              reg2operand(src));
+}
+
+OutputCodeStream& OutputCodeStream::append_nop_code() {
+    return this->append_code(Instructions::ADDI,
+                             reg2operand(Reg::zero),
+                             reg2operand(Reg::zero),
+                             imm2operand(0));
 }
 
 OutputCodeStream& OutputCodeStream::concat_stream(const OutputCodeStream &oth) {

@@ -8,15 +8,15 @@ module REGFILE(
     reg [31:0] x[0:31];
 
     always @(posedge RST_X) begin
-        x[0] <= #5 0;
-        x[1] <= #5 0;  // return address(link register)
-        x[2] <= #5 0;  // stack pointer
-        x[8] <= #5 0;  // base pointer
+        x[0] <= #1 0;
+        x[1] <= #1 0;  // return address(link register)
+        x[2] <= #1 65535 << 2;  // stack pointer
+        x[8] <= #1 0;  // base pointer
     end
 
-    always @(negedge CLK) if (RST_X && we && rd != 0) x[rd] <= #5 wd;
+    always @(negedge CLK) if (RST_X && we && rd != 0) x[rd] <= #1 wd;
 
-    assign #5 rrs1 = (RST_X ? x[rs1] : 32'h0);
-    assign #5 rrs2 = (RST_X ? x[rs2] : 32'h0);
-    // assign #5 a0 = (RST_X ? x[5'd10] : 32'h0);  // return value
+    assign #1 rrs1 = (RST_X ? x[rs1] : 32'h0);
+    assign #1 rrs2 = (RST_X ? x[rs2] : 32'h0);
+    // assign #1 a0 = (RST_X ? x[5'd10] : 32'h0);  // return value
 endmodule

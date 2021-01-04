@@ -25,6 +25,8 @@ bool Parser::is_lambda() const {
 }
 
 ASTNode* Parser::parse() {
+    return parse_eval();
+    /*
     auto ret = new EvalNode();
     while (!stream.finished()) {
         if (is_lambda()) {
@@ -34,6 +36,7 @@ ASTNode* Parser::parse() {
         }
     }
     return ret;
+    */
 }
 
 EvalNode* Parser::parse_eval() {

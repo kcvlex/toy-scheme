@@ -25,7 +25,7 @@ struct SymboledValue {
 
 struct SymbolTable {
     using symbols_type = std::list<SymboledValue>;
-    using arg_regs_map = std::array<SymboledValue*, arg_reg_num>;
+    using arg_regs_map = std::array<SymboledValue*, arg_reg_num - 1>;
 
     SymbolTable();
     void set_arg_mapping(const LambdaNode *lambda, const std::uint32_t cur_nest);

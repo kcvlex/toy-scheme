@@ -29,8 +29,7 @@ const std::vector<Assembler::raw_type>& Assembler::encode() {
 
 std::size_t Assembler::set_label2addr() {
     label2addr.resize(fcodes.size());
-    instr_addr_type sum = 2;  // FIXME : 8 means nop * 2
-    cur_addr = 8;
+    instr_addr_type sum = 0;
     for (const auto &[ label, codes ] : fcodes) {
         if (label != -1) label2addr[label] = sum * 4;
         sum += codes.entire_size();

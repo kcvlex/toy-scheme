@@ -14,9 +14,8 @@
 namespace compiler {
 
 using imm_value_type = std::int16_t;
-using ref_mem_type = std::pair<Reg, imm_value_type>;
 using label_type = std::int32_t;  // FIXME
-using Operand = std::variant<Reg, imm_value_type, ref_mem_type, label_type>;
+using Operand = std::variant<Reg, imm_value_type, label_type>;
 
 enum class Instructions {
     LUI = 0,
@@ -33,7 +32,6 @@ enum class Instructions {
 
 Operand reg2operand(const Reg reg);
 Operand imm2operand(const imm_value_type imm);
-Operand refmem2operand(const Reg reg, const imm_value_type offset);
 Operand label2operand(const label_type label);
 
 struct ThreeAddressCode {
@@ -114,6 +112,7 @@ struct OutputCodeStream {
     OutputCodeStream& append_push_code(const Reg src);
     OutputCodeStream& append_pop_code(const Reg dst);
     OutputCodeStream& append_assign_code(const Reg dst, const Reg src);
+    OutputCodeStream& append_nop_code();
     OutputCodeStream& concat_stream(const OutputCodeStream &oth);
 
     void clear();
