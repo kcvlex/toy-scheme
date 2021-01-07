@@ -10,6 +10,7 @@
 #include <array>
 #include <sstream>
 #include "registers.hpp"
+#include "simple_register_allocator.hpp"
 
 namespace compiler {
 
@@ -58,6 +59,8 @@ struct ThreeAddressCode {
     void read(Reg &r1, Reg &r2, imm_value_type &imm) const;
     void read(Reg &r1, Reg &r2, label_type &label) const;
     void read(Reg &r1, label_type &label) const;
+
+    bool has_side_effect(const Reg reg) const noexcept;
 };
 
 std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val);
@@ -113,12 +116,18 @@ struct OutputCodeStream {
     OutputCodeStream& append_pop_code(const Reg dst);
     OutputCodeStream& append_assign_code(const Reg dst, const Reg src);
     OutputCodeStream& append_nop_code();
-    OutputCodeStream& concat_stream(const OutputCodeStream &oth);
 
     void clear();
-
+    OutputCodeStream& concat(const OutputCodeStream &oth);
+    OutputCodeStream& concat(OutputCodeStream &&oth);
+    
     InputCodeStream convert();
     std::size_t entire_size() const noexcept;
+
+    static OutputCodeStream save_caller_saved_regs(const SimpleRegisterAllocator &reg_alloc);
+    static OutputCodeStream save_callee_saved_regs(const SimpleRegisterAllocator &reg_alloc);
+    static OutputCodeStream restore_caller_saved_regs(const SimpleRegisterAllocator &reg_alloc);
+    static OutputCodeStream restore_callee_saved_regs(const SimpleRegisterAllocator &reg_alloc);
 
 private:
     std::vector<ThreeAddressCode> buf;

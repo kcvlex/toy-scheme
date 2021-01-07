@@ -16,7 +16,7 @@ void test_tokenize(const std::string &s) {
     while (!ts.finished()) std::cout << *ts.advance() << std::endl;
 }
 
-ASTNode* test_parser_and_visitor(const std::string &s) {
+SequenceNode* test_parser_and_visitor(const std::string &s) {
     TokenStream ts = std::move(Tokenizer::build(s));
     Parser parser(std::move(ts));
     auto root = parser.parse();
@@ -25,9 +25,9 @@ ASTNode* test_parser_and_visitor(const std::string &s) {
     return root;
 }
 
-auto test_sem_analyzer(std::vector<ASTNode*> nodes) {
+auto test_sem_analyzer(const SequenceNode* const node) {
     SemanticAnalyzer s_analy;
-    auto res = s_analy.analyze(nodes);
+    auto res = s_analy.analyze(node);
     auto ret = res;
     std::size_t line = 0;
     for (auto func : res) {
@@ -74,8 +74,7 @@ void test_asm(std::vector<FunctionCode> fcodes) {
 int main() {
     std::string code = "((lambda (f a b) \n  (+ a (+ b (+ 1 2)))) 42 43 44)\n";
     auto root = test_parser_and_visitor(code);
-    std::vector<ASTNode*> nodes = { root };
-    auto fcodes = test_sem_analyzer(nodes);
+    auto fcodes = test_sem_analyzer(root);
     test_asm(fcodes);
     delete root;
     return 0;

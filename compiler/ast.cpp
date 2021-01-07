@@ -5,15 +5,11 @@ namespace compiler {
 
 /***** For Visitor *****/
 
-void EvalNode::accept(NodeVisitor &visitor) { visitor.visit(this); }
-void LambdaNode::accept(NodeVisitor &visitor) { visitor.visit(this); }
-void SymbolNode::accept(NodeVisitor &visitor) { visitor.visit(this); }
-void ConstantNode::accept(NodeVisitor &visitor) { visitor.visit(this); }
-
 void EvalNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
 void LambdaNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
 void SymbolNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
 void ConstantNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
+void SequenceNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
 
 
 /***** AST Node *****/
@@ -100,6 +96,21 @@ int ConstantNode::get_value() const {
 }
 
 
+/***** Sequence Node *****/
+
+SequenceNode::SequenceNode(std::vector<ASTNode*> seq_arg) : seq(std::move(seq_arg)) 
+{
+}
+
+SequenceNode::~SequenceNode() {
+    for (auto expr : seq) delete expr;
+}
+
+const SequenceNode::seq_type& SequenceNode::get_seq() const noexcept {
+    return seq;
+}
+
+
 /***** Visitor For Debug *****/
 
 DebugConstNodeVisitor::DebugConstNodeVisitor(int depth_arg)
@@ -123,7 +134,7 @@ void DebugConstNodeVisitor::visit(const EvalNode* const node) {
 
 void DebugConstNodeVisitor::visit(const LambdaNode* const node) {
     write_lines();
-    std::cout << "- lambda" << std::endl;
+    std::cout << "- LambdaNode" << std::endl;
     depth++;
     decltype(auto) args = node->get_args();
     for (auto arg : args) arg->accept(*this);
@@ -141,6 +152,14 @@ void DebugConstNodeVisitor::visit(const SymbolNode* const node) {
 void DebugConstNodeVisitor::visit(const ConstantNode* const node) {
     write_lines();
     std::cout << "- ConstantNode(" << node->get_value() << ")\n";
+}
+
+void DebugConstNodeVisitor::visit(const SequenceNode* const node) {
+    write_lines();
+    std::cout << "- SequenceNode\n";
+    depth++;
+    for (auto expr : node->get_seq()) expr->accept(*this);
+    depth--;
 }
 
 void DebugConstNodeVisitor::write_lines() {

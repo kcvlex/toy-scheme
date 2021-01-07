@@ -4,8 +4,19 @@
 
 namespace compiler {
 
+namespace {
+
+std::string surround(std::string s) {
+    std::string res = "(begin \n";
+    res += std::move(s);
+    res += ")";
+    return res;
+}
+
+}
+
 Tokenizer::Tokenizer(const std::string &code_arg)
-    : code(std::move(code_arg)), token_list()
+    : code(std::move(surround(code_arg))), token_list()
 {
 }
 
@@ -63,12 +74,17 @@ TokenStream::token_iterator TokenStream::advance() {
     return ret;
 }
 
-TokenStream::token_iterator TokenStream::eat(const raw_token_type &token) {
+TokenStream& TokenStream::eat(const raw_token_type &token) {
     if (*cur != token) {
         std::cout << *cur << ", " << token << std::endl;
         assert(false);
     }
-    return advance();
+    advance();
+    return *this;
+}
+
+std::size_t TokenStream::rest_size() const noexcept {
+    return std::distance(cur, std::cend(token_list));
 }
 
 bool TokenStream::finished() const {

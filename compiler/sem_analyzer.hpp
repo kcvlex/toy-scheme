@@ -2,50 +2,54 @@
 #define INCLUDE_SEM_ANALYZER
 
 #include "ast.hpp"
-#include "three_address_code.hpp"
-#include <list>
+#include "symbol_table.hpp"
+#include "simple_register_allocator.hpp"
 #include <optional>
-#include <array>
 #include <stack>
+#include <vector>
 
 namespace compiler {
-
-struct SymboledValue {
-    std::string name;
-    const std::uint32_t nest;
-    const imm_value_type offset;
-
-    SymboledValue(std::string name_arg, 
-                  const std::uint32_t nest_arg, 
-                  const imm_value_type offset_arg);
-
-    SymboledValue(const std::uint32_t nest_arg, 
-                  const imm_value_type offset_arg);
-};
-
-struct SymbolTable {
-    using symbols_type = std::list<SymboledValue>;
-    using arg_regs_map = std::array<SymboledValue*, arg_reg_num - 1>;
-
-    SymbolTable();
-    void set_arg_mapping(const LambdaNode *lambda, const std::uint32_t cur_nest);
-    void restore_arg_mapping();
-    SymboledValue* find(const std::string &name) const;
-    std::optional<Reg> find_arg(const std::string &name) const;
-
-private:
-    arg_regs_map gen_default_map() const;
-
-    symbols_type symbols;
-    arg_regs_map regs;
-    std::stack<arg_regs_map, std::vector<arg_regs_map>> history;
-};
 
 struct FunctionCode {
     std::uint32_t label;
     OutputCodeStream cs;
 
     FunctionCode(std::uint32_t label_arg, OutputCodeStream ocs_arg);
+};
+
+template <typename T>
+struct simple_stack {
+    const std::size_t size() const noexcept {
+        return buf.size();
+    }
+
+    const T& top() const noexcept {
+        return buf.back();
+    }
+
+    T& top() noexcept {
+        return buf.back();
+    }
+
+    void push(T ele) {
+        buf.push_back(std::move(ele));
+    }
+
+    template <typename... Args>
+    void emplace(Args&&... args) {
+        buf.emplace_back(std::forward<Args>(args)...);
+    }
+
+    void pop() {
+        buf.pop_back();
+    }
+
+    bool empty() const noexcept {
+        return buf.empty();
+    }
+
+private:
+    std::vector<T> buf;
 };
 
 enum class BuiltinOperation { ADD, SUB, };
@@ -57,12 +61,13 @@ using operation_type = std::variant<BuiltinOperation, lambda_function_type, symb
 struct SemanticAnalyzer : public ConstNodeVisitor {
     SemanticAnalyzer();
 
-    virtual void visit(const EvalNode *node) override;
-    virtual void visit(const LambdaNode *node) override;
-    virtual void visit(const SymbolNode *node) override;
-    virtual void visit(const ConstantNode *node) override;
+    virtual void visit(const EvalNode* const node) override;
+    virtual void visit(const LambdaNode* const node) override;
+    virtual void visit(const SymbolNode* const node) override;
+    virtual void visit(const ConstantNode* const node) override;
+    virtual void visit(const SequenceNode* const node) override;
 
-    std::vector<FunctionCode> analyze(const std::vector<ASTNode*> &nodes);
+    std::vector<FunctionCode> analyze(const SequenceNode* const nodes);
     
 private:
     SymbolTable table;
@@ -70,16 +75,18 @@ private:
     OutputCodeStream cur_code;
     std::vector<FunctionCode> fcodes;
     std::vector<OutputCodeStream> code_buf;
+    simple_stack<SimpleRegisterAllocator> sra_stk;
 
-    OutputCodeStream callee_prolog(const LambdaNode *lambda);
-    OutputCodeStream callee_epilog(const LambdaNode *lambda);
+    OutputCodeStream callee_prolog();
+    OutputCodeStream callee_epilog();
 };
 
 struct SimpleInstructionChecker : public ConstNodeVisitor {
-    virtual void visit(const EvalNode *node) override;
-    virtual void visit(const LambdaNode *node) override;
-    virtual void visit(const SymbolNode *node) override;
-    virtual void visit(const ConstantNode *node) override;
+    virtual void visit(const EvalNode* const node) override;
+    virtual void visit(const LambdaNode* const node) override;
+    virtual void visit(const SymbolNode* const node) override;
+    virtual void visit(const ConstantNode* const node) override;
+    virtual void visit(const SequenceNode* const node) override;
     std::optional<operation_type> res = std::optional<operation_type>(std::nullopt);
 };
 

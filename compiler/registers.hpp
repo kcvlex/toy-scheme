@@ -41,6 +41,9 @@ constexpr std::size_t arg_reg_num = 8;
 constexpr std::size_t tmp_reg_num = 7;
 constexpr std::size_t callee_saved_reg_num = 12;
 
+constexpr Reg bp_reg = Reg::s0;
+constexpr Reg rv_reg = Reg::a0;
+
 static_assert(reg2int(Reg::Size) == 32, "Invalid Number of Registers");
 
 };

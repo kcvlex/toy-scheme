@@ -16,7 +16,8 @@ struct TokenStream {
     token_iterator head() const;
     token_iterator lookup(const std::size_t n) const;
     token_iterator advance();
-    token_iterator eat(const raw_token_type &token);
+    TokenStream& eat(const raw_token_type &token);
+    std::size_t rest_size() const noexcept;
     bool finished() const;
 
 private:
@@ -26,14 +27,13 @@ private:
 
 struct Tokenizer {
     static TokenStream build(const std::string &code);
-    Tokenizer(const std::string &code_arg);
-    Tokenizer(Tokenizer&&) = default;
 
 private:
 
-    const std::string &code;
+    const std::string code;
     TokenStream::raw_tokens_type token_list;
 
+    Tokenizer(const std::string &code_arg);
     void tokenize();
 };
 

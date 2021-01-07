@@ -1,6 +1,7 @@
 #include "three_address_code.hpp"
 #include "util/enum2str.hpp"
 #include <tuple>
+#include <algorithm>
 
 namespace compiler {
 
@@ -75,10 +76,32 @@ void ThreeAddressCode::read(Reg &r1, label_type &label) const {
     label = std::get<label_type>(op2.value());
 }
 
+bool ThreeAddressCode::has_side_effect(const Reg reg) const noexcept {
+    for (auto op : { &op1, &op2, &op3 }) {
+        if (!op->has_value()) continue;
+        if (auto p = std::get_if<Reg>(&**op)) {
+            if (*p == reg) return true;
+        }
+    }
+    return false;
+}
 
 std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val) {
     os << util::to_str(val.instr);
     std::string elim = "\t";
+    
+    if (val.instr == Instructions::SW || val.instr == Instructions::LW) {
+        auto v1 = std::get<0>(val.op1.value());
+        auto v2 = std::get<0>(val.op2.value());
+        auto v3 = std::get<1>(val.op3.value());
+        if (val.instr == Instructions::SW) {
+            os << elim << util::to_str(v2) << "," << v3 << "(" << util::to_str(v1) << ")";
+        } else {
+            os << elim << util::to_str(v1) << "," << v3 << "(" << util::to_str(v2) << ")";
+        }
+        return os;
+    }
+    
     for (auto op : { val.op1, val.op2, val.op3 }) {
         if (!op.has_value()) break;
         os << std::exchange(elim, ",");
@@ -126,7 +149,7 @@ bool InputCodeStream::finished() const noexcept {
 /******************** OutputCodeStream ********************/
 
 OutputCodeStream::OutputCodeStream() 
-    : buf() 
+    : buf()
 {
 }
 
@@ -214,8 +237,21 @@ OutputCodeStream& OutputCodeStream::append_nop_code() {
                              imm2operand(0));
 }
 
-OutputCodeStream& OutputCodeStream::concat_stream(const OutputCodeStream &oth) {
+OutputCodeStream& OutputCodeStream::concat(const OutputCodeStream &oth) {
     buf.insert(std::end(buf), std::cbegin(oth.buf), std::cend(oth.buf));
+    return *this;
+}
+
+OutputCodeStream& OutputCodeStream::concat(OutputCodeStream &&oth) {
+    bool rev = false;
+    if (buf.size() < oth.buf.size()) {
+        rev = true;
+        std::swap(buf, oth.buf);
+        std::reverse(std::begin(buf), std::end(buf));
+        std::reverse(std::begin(oth.buf), std::end(oth.buf));
+    }
+    buf.insert(std::end(buf), std::cbegin(oth.buf), std::cend(oth.buf));
+    if (rev) std::reverse(std::begin(buf), std::end(buf));
     return *this;
 }
 
@@ -231,6 +267,86 @@ InputCodeStream OutputCodeStream::convert() {
     return InputCodeStream(std::move(buf));
 }
 
+OutputCodeStream OutputCodeStream::save_caller_saved_regs(const SimpleRegisterAllocator &reg_alloc) {
+    OutputCodeStream res;
+    imm_value_type offset = 0;
+
+    auto save_aux = [&] (const Reg reg) {
+        res.append_sw_code(reg, Reg::sp, offset);
+        offset -= 4;
+    };
+
+    save_aux(Reg::ra);
+    for (std::size_t i = 0; i != reg_alloc.used_tmp_num(); i++) save_aux(nth_tmp_reg(i));
+    for (std::size_t i = 0; i != reg_alloc.arg_num(); i++) save_aux(nth_arg_reg(i));
+
+    res.append_code(Instructions::ADDI,
+                    reg2operand(Reg::sp),
+                    reg2operand(Reg::sp),
+                    imm2operand(offset));
+
+    return res;
+}
+
+OutputCodeStream OutputCodeStream::save_callee_saved_regs(const SimpleRegisterAllocator &reg_alloc) {
+    OutputCodeStream res;
+    imm_value_type offset = 0;
+
+    res.append_assign_code(Reg::t0, Reg::sp);
+
+    auto save_aux = [&] (const Reg reg) {
+        res.append_sw_code(reg, Reg::sp, offset);
+        offset -= 4;
+    };
+
+    save_aux(Reg::sp);
+    for (std::size_t i = 0; i != reg_alloc.used_callee_saved_num(); i++) save_aux(nth_callee_saved_reg(i));
+
+    res.append_assign_code(Reg::sp, Reg::t0);
+    
+    return res;
+}
+
+OutputCodeStream OutputCodeStream::restore_caller_saved_regs(const SimpleRegisterAllocator &reg_alloc) {
+    OutputCodeStream res;
+    imm_value_type offset = 0;
+    const imm_value_type reg_cnt = 1 + reg_alloc.used_tmp_num() + reg_alloc.arg_num();
+
+    res.append_code(Instructions::ADDI,
+                    reg2operand(Reg::t0),
+                    reg2operand(Reg::sp),
+                    imm2operand(reg_cnt * 4));
+
+    auto restore_aux = [&] (const Reg reg) {
+        res.append_sw_code(reg, Reg::t0, offset);
+        offset -= 4;
+    };
+
+    restore_aux(Reg::ra);
+    for (std::size_t i = 0; i != reg_alloc.used_tmp_num(); i++) restore_aux(nth_tmp_reg(i));
+    for (std::size_t i = 0; i != reg_alloc.arg_num(); i++) restore_aux(nth_arg_reg(i));
+
+    res.append_assign_code(Reg::sp, Reg::t0);
+
+    return res;
+}
+
+OutputCodeStream OutputCodeStream::restore_callee_saved_regs(const SimpleRegisterAllocator &reg_alloc) {
+    OutputCodeStream res;
+    imm_value_type offset = 0;
+
+    res.append_assign_code(Reg::t0, bp_reg);
+
+    auto restore_aux = [&] (const Reg reg) {
+        res.append_sw_code(reg, Reg::t0, offset);
+        offset -= 4;
+    };
+
+    restore_aux(Reg::sp);
+    for (std::size_t i = 0; i != reg_alloc.used_callee_saved_num(); i++) restore_aux(nth_callee_saved_reg(i));
+
+    return res;
+}
 
 }
 
