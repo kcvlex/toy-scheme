@@ -10,7 +10,7 @@ all:
 	+$(MAKE) -C compiler
 	+$(MAKE) -C assembler
 	+$(MAKE) prog
-	./prog > gomi/po.txt
+	./prog
 
 prog: main.o ${COMPILER_DIR}/compiler.a ${ASSEMBLER_DIR}/assembler.a
 	${CXX} ${CXX_FLAGS} $^ -o $@

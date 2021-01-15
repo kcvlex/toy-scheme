@@ -6,6 +6,7 @@
 #include "compiler/three_address_code.hpp"
 #include "compiler/sem_analyzer.hpp"
 #include "assembler/assembler.hpp"
+#include "compiler/cps.hpp"
 #include "util/enum2str.hpp"
 
 using namespace compiler;
@@ -13,16 +14,17 @@ using namespace assembler;
 
 void test_tokenize(const std::string &s) {
     TokenStream ts = std::move(Tokenizer::build(s));
-    while (!ts.finished()) std::cout << *ts.advance() << std::endl;
+    // while (!ts.finished()) std::cout << *ts.advance() << std::endl;
 }
 
-SequenceNode* test_parser_and_visitor(const std::string &s) {
+ASTNode* test_parser_and_visitor(const std::string &s) {
     TokenStream ts = std::move(Tokenizer::build(s));
     Parser parser(std::move(ts));
     auto root = parser.parse();
-    DebugConstNodeVisitor visitor;
-    root->accept(visitor);
-    return root;
+    DebugASTNodeVisitor visitor;
+    auto lambda = dynamic_cast<EvalNode*>(root->get_seq()[0]);
+    lambda->accept(visitor);
+    return lambda;
 }
 
 auto test_sem_analyzer(const SequenceNode* const node) {
@@ -71,11 +73,32 @@ void test_asm(std::vector<FunctionCode> fcodes) {
     }
 }
 
+void test_cps(const ASTNode* const root) {
+    AST2CPS visitor;
+    root->accept(visitor);
+    auto cps = visitor.res;
+    PrintCPS printer;
+    cps->accept(printer);
+    delete cps;
+}
+
 int main() {
-    std::string code = "((lambda (f a b) \n  (+ a (+ b (+ 1 2)))) 42 43 44)\n";
+    // std::string code = "((lambda (f a b) \n  (+ a (+ b (+ 1 2)))) 42 43 44)\n";
+    /*
+    std::string code = "((lambda (a b) (+ a b)) 1 2)";
     auto root = test_parser_and_visitor(code);
+    std::cout << "(";
+    test_cps(root->get_seq()[0]);
+    std::cout << " (lambda (x) (display x)))\n";
+    */
+    std::string code = "((lambda (a b) (+ a b)) 1 2)";
+    auto lambda = test_parser_and_visitor(code);
+    test_cps(lambda);
+    delete lambda;
+    /*
     auto fcodes = test_sem_analyzer(root);
     test_asm(fcodes);
     delete root;
+    */
     return 0;
 }

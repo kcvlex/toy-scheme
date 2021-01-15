@@ -6,7 +6,7 @@ HEADERS = $(shell ls *hpp)
 
 all: compiler.a
 
-compiler.a: token.o parser.o ast.o simple_register_allocator.o three_address_code.o symbol_table.o sem_analyzer.o
+compiler.a: token.o parser.o ast.o simple_register_allocator.o three_address_code.o symbol_table.o sem_analyzer.o cps.o
 	ar rcs $@ $^
 
 sem_analyzer.o: sem_analyzer.cpp sem_analyzer.hpp ast.hpp three_address_code.hpp symbol_table.hpp simple_register_allocator.hpp
@@ -19,6 +19,9 @@ three_address_code.o: three_address_code.cpp three_address_code.hpp simple_regis
 	${CXX} ${CXX_FLAGS} -c $< -o $@
 
 simple_register_allocator.o: simple_register_allocator.cpp simple_register_allocator.hpp registers.hpp
+	${CXX} ${CXX_FLAGS} -c $< -o $@
+
+cps.o: cps.cpp cps.hpp ast.hpp
 	${CXX} ${CXX_FLAGS} -c $< -o $@
 
 token.o: token.cpp token.hpp

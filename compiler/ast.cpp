@@ -5,11 +5,11 @@ namespace compiler {
 
 /***** For Visitor *****/
 
-void EvalNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
-void LambdaNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
-void SymbolNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
-void ConstantNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
-void SequenceNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
+void EvalNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
+void LambdaNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
+void SymbolNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
+void ConstantNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
+void SequenceNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
 
 
 /***** AST Node *****/
@@ -113,17 +113,17 @@ const SequenceNode::seq_type& SequenceNode::get_seq() const noexcept {
 
 /***** Visitor For Debug *****/
 
-DebugConstNodeVisitor::DebugConstNodeVisitor(int depth_arg)
+DebugASTNodeVisitor::DebugASTNodeVisitor(int depth_arg)
     : depth(depth_arg)
 {
 }
 
-DebugConstNodeVisitor::DebugConstNodeVisitor()
-    : DebugConstNodeVisitor(0)
+DebugASTNodeVisitor::DebugASTNodeVisitor()
+    : DebugASTNodeVisitor(0)
 {
 }
 
-void DebugConstNodeVisitor::visit(const EvalNode* const node) {
+void DebugASTNodeVisitor::visit(const EvalNode* const node) {
     write_lines();
     std::cout << "- EvalNode" << std::endl;
     depth++;
@@ -132,7 +132,7 @@ void DebugConstNodeVisitor::visit(const EvalNode* const node) {
     depth--;
 }
 
-void DebugConstNodeVisitor::visit(const LambdaNode* const node) {
+void DebugASTNodeVisitor::visit(const LambdaNode* const node) {
     write_lines();
     std::cout << "- LambdaNode" << std::endl;
     depth++;
@@ -144,17 +144,17 @@ void DebugConstNodeVisitor::visit(const LambdaNode* const node) {
     depth--;
 }
 
-void DebugConstNodeVisitor::visit(const SymbolNode* const node) {
+void DebugASTNodeVisitor::visit(const SymbolNode* const node) {
     write_lines();
     std::cout << "- SymbolNode(" << node->get_symbol() << ")\n";
 }
 
-void DebugConstNodeVisitor::visit(const ConstantNode* const node) {
+void DebugASTNodeVisitor::visit(const ConstantNode* const node) {
     write_lines();
     std::cout << "- ConstantNode(" << node->get_value() << ")\n";
 }
 
-void DebugConstNodeVisitor::visit(const SequenceNode* const node) {
+void DebugASTNodeVisitor::visit(const SequenceNode* const node) {
     write_lines();
     std::cout << "- SequenceNode\n";
     depth++;
@@ -162,7 +162,7 @@ void DebugConstNodeVisitor::visit(const SequenceNode* const node) {
     depth--;
 }
 
-void DebugConstNodeVisitor::write_lines() {
+void DebugASTNodeVisitor::write_lines() {
     for (int i = 0; i < depth; i++) std::cout << "|";
 }
 

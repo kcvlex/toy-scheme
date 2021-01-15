@@ -11,7 +11,7 @@ struct Parser {
 
     SequenceNode* parse();
 
-private:
+//private:
     EvalNode* parse_eval();
     LambdaNode* parse_lambda();
     SymbolNode* parse_symbol();
