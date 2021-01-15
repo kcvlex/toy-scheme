@@ -1,5 +1,4 @@
 #include "cps.hpp"
-#include <iostream>
 #include "util/enum2str.hpp"
 
 namespace compiler {
@@ -134,7 +133,7 @@ std::int32_t ConstantCPS::get_value() const noexcept {
 /******************** CPS transformation ********************/
 
 void AST2CPS::visit(const EvalNode* const node) {
-    const auto k = get_cont_label() + "_eval";
+    const auto k = get_cont_label();
     std::vector<CPSNode::node_ptr> args;
     CPSNode::node_ptr f_node = nullptr;
 
@@ -146,7 +145,7 @@ void AST2CPS::visit(const EvalNode* const node) {
                 return;
             }
             
-            const auto k_i = get_cont_label() + "_eval_i";
+            const auto k_i = get_cont_label();
             if (!f_node) {
                 f_node = new VarCPS(k_i);
             } else {
@@ -166,8 +165,8 @@ void AST2CPS::visit(const EvalNode* const node) {
 }
 
 void AST2CPS::visit(const LambdaNode* const node) {
-    const auto k1 = get_cont_label() + "_lambda";
-    const auto k2 = get_cont_label() + "_lambda";
+    const auto k1 = get_cont_label();
+    const auto k2 = get_cont_label();
     std::vector<std::string> args;
     args.reserve(node->get_args().size());
     for (auto ptr : node->get_args()) args.push_back(ptr->get_symbol());
@@ -183,27 +182,24 @@ void AST2CPS::visit(const LambdaNode* const node) {
 void AST2CPS::visit(const SymbolNode* const node) {
     decltype(auto) symbol = node->get_symbol();
     std::string use = symbol;
-    /*
     if (auto ptr = PrimitiveCPS::try_make(symbol)) {
-        // FIXME
         use = util::to_str<PrimitiveCPS::Type>(ptr->get_type());
     }
-    */
-    const auto k = get_cont_label() + "_symbol";
+    const auto k = get_cont_label();
     this->res = new LambdaCPS({ k },
                               new ApplyCPS(new VarCPS(k), 
                                            { new VarCPS(use) }));
 }
 
 void AST2CPS::visit(const ConstantNode* const node) {
-    const auto k = get_cont_label() + "_constant";
+    const auto k = get_cont_label();
     this->res = new LambdaCPS({ k }, 
                               new ApplyCPS(new VarCPS(k), 
                                            { new ConstantCPS(node->get_value()) }));
 }
 
 void AST2CPS::visit(const SequenceNode* const node) {
-    const auto k = get_cont_label() + "_seq";
+    const auto k = get_cont_label();
   
     auto gen_rec = [&] {
         auto f = [&](const std::size_t i, auto rec) -> void {
@@ -211,7 +207,7 @@ void AST2CPS::visit(const SequenceNode* const node) {
                 this->res = new VarCPS(k);
                 return;
             }
-            const auto k_i = get_cont_label() + "_seq_i";
+            const auto k_i = get_cont_label();
             rec(i + 1, rec);
             AST2CPS visitor_i;
             node->get_seq()[i]->accept(visitor_i);
@@ -224,47 +220,66 @@ void AST2CPS::visit(const SequenceNode* const node) {
     this->res = new LambdaCPS({ k }, this->res);
 }
 
-void PrintCPS::print_nest() {
-    for (int i = 0; i < nest; i++) std::cout << "  ";
-}
 
-void PrintCPS::visit(const LambdaCPS* const cps) {
-    std::cout << "(lambda ";
-    char elim = '(';
-    for (std::size_t i = 0; i != cps->get_arg_num(); i++) {
-        std::cout << std::exchange(elim, ' ') << cps->get_arg(i);
+namespace internal {
+
+struct PrintCPS : public CPSVisitor {
+    PrintCPS() = delete;
+
+    PrintCPS(const std::string &filename)
+        : ofs(filename)
+    {
+        ofs << "(define ADD (lambda (k) (lambda args (k (apply + args)))))\n"
+            << "(";
     }
-    std::cout << ")";
+    
 
-    nest++;
-    std::cout << '\n';
-    print_nest();
-    cps->get_body()->accept(*this);
-    std::cout << ')';
-    nest--;
-}
-
-void PrintCPS::visit(const PrimitiveCPS* const cps) {
-    std::cout << util::to_str<PrimitiveCPS::Type>(cps->get_type());
-}
-
-void PrintCPS::visit(const ApplyCPS* const cps) {
-    std::cout << '(';
-    cps->get_proc()->accept(*this);
-    for (std::size_t i = 0; i != cps->get_arg_num(); i++) {
-        std::cout << ' ';
-        cps->get_arg(i)->accept(*this);
+    ~PrintCPS() {
+        ofs << " (lambda (x) (display x)))\n";
     }
-    std::cout << ')' << '\n';
-    print_nest();
-}
 
-void PrintCPS::visit(const VarCPS* const cps) {
-    std::cout << cps->get_var();
-}
+    virtual void visit(const LambdaCPS* const cps) override {
+        ofs << "(lambda ";
+        char elim = '(';
+        for (std::size_t i = 0; i != cps->get_arg_num(); i++) {
+            ofs << std::exchange(elim, ' ') << cps->get_arg(i);
+        }
+        ofs << ") ";
+        cps->get_body()->accept(*this);
+        ofs << ")";
+    }
 
-void PrintCPS::visit(const ConstantCPS* const cps) {
-    std::cout << cps->get_value();
+    virtual void visit(const PrimitiveCPS* const cps) override {
+        ofs << util::to_str<PrimitiveCPS::Type>(cps->get_type());
+    }
+
+    virtual void visit(const ApplyCPS* const cps) override {
+        ofs << '(';
+        cps->get_proc()->accept(*this);
+        for (std::size_t i = 0; i != cps->get_arg_num(); i++) {
+            ofs << ' ';
+            cps->get_arg(i)->accept(*this);
+        }
+        ofs << ')';
+    }
+
+    virtual void visit(const VarCPS* const cps) override {
+        ofs << cps->get_var();
+    }
+
+    virtual void visit(const ConstantCPS* const cps) override {
+        ofs << cps->get_value();
+    }
+
+private:
+    std::ofstream ofs;
+};
+
+} // internal
+
+void print_cps_code(const std::string &filename, const CPSNode* const cps) {
+    internal::PrintCPS pc(filename);
+    cps->accept(pc);
 }
 
 }

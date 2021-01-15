@@ -2,6 +2,7 @@
 #define INCLUDE_CPS
 
 #include "ast.hpp"
+#include <fstream>
 
 namespace compiler {
 
@@ -94,17 +95,7 @@ struct CPSVisitor {
     virtual void visit(const ConstantCPS* const cps) = 0;
 };
 
-struct PrintCPS : public CPSVisitor {
-    virtual void visit(const LambdaCPS* const cps) override;
-    virtual void visit(const PrimitiveCPS* const cps) override;
-    virtual void visit(const ApplyCPS* const cps) override;
-    virtual void visit(const VarCPS* const cps) override;
-    virtual void visit(const ConstantCPS* const cps) override;
-
-private:
-    int nest = 0;
-    void print_nest();
-};
+void print_cps_code(const std::string &filename, const CPSNode* const cps);
 
 }
 

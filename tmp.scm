@@ -1,0 +1,2 @@
+(define ADD (lambda (k) (lambda args (k (apply + args)))))
+((lambda (k0) ((lambda (k8) (k8 (lambda (k9) (lambda (f a b) ((lambda (k10) ((lambda (k20) (k20 ADD)) (lambda (k11) ((lambda (k19) (k19 a)) (lambda (k12) ((lambda (k18) (k18 b)) (lambda (k13) ((lambda (k17) (k17 1)) (lambda (k14) ((lambda (k16) (k16 2)) (lambda (k15) ((k11 k10) k12 k13 k14 k15)))))))))))) k9))))) (lambda (k1) ((lambda (k7) (k7 42)) (lambda (k2) ((lambda (k6) (k6 43)) (lambda (k3) ((lambda (k5) (k5 44)) (lambda (k4) ((k1 k0) k2 k3 k4)))))))))) (lambda (x) (display x)))

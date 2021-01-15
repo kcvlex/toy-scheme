@@ -77,21 +77,12 @@ void test_cps(const ASTNode* const root) {
     AST2CPS visitor;
     root->accept(visitor);
     auto cps = visitor.res;
-    PrintCPS printer;
-    cps->accept(printer);
+    print_cps_code("tmp.scm", cps);
     delete cps;
 }
 
 int main() {
-    // std::string code = "((lambda (f a b) \n  (+ a (+ b (+ 1 2)))) 42 43 44)\n";
-    /*
-    std::string code = "((lambda (a b) (+ a b)) 1 2)";
-    auto root = test_parser_and_visitor(code);
-    std::cout << "(";
-    test_cps(root->get_seq()[0]);
-    std::cout << " (lambda (x) (display x)))\n";
-    */
-    std::string code = "((lambda (a b) (+ a b)) 1 2)";
+    std::string code = "((lambda (f a b) \n  (+ a b 1 2)) 42 43 44)\n";
     auto lambda = test_parser_and_visitor(code);
     test_cps(lambda);
     delete lambda;
