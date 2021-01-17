@@ -1,37 +1,25 @@
 CXX = g++
+CC = cc
 ROOT_DIR = $(shell pwd)/..
-UTIL_DIR = ${ROOT_DIR}/util
+SOURCES = $(wildcard *cpp)
+OBJECTS = $(patsubst %.cpp,%.o,${SOURCES})
+DEPS = $(patsubst %.cpp,%.d,${SOURCES})
 CXX_FLAGS = -Wall -g -std=c++17 -I${ROOT_DIR}
-HEADERS = $(shell ls *hpp)
 
 all: compiler.a
 
-compiler.a: token.o parser.o ast.o simple_register_allocator.o three_address_code.o symbol_table.o sem_analyzer.o cps.o
-	ar rcs $@ $^
-
-sem_analyzer.o: sem_analyzer.cpp sem_analyzer.hpp ast.hpp three_address_code.hpp symbol_table.hpp simple_register_allocator.hpp
-	${CXX} ${CXX_FLAGS} -c $< -o $@
-
-symbol_table.o: symbol_table.cpp symbol_table.hpp three_address_code.hpp
-	${CXX} ${CXX_FLAGS} -c $< -o $@
-
-three_address_code.o: three_address_code.cpp three_address_code.hpp simple_register_allocator.hpp
-	${CXX} ${CXX_FLAGS} -c $< -o $@
-
-simple_register_allocator.o: simple_register_allocator.cpp simple_register_allocator.hpp registers.hpp
-	${CXX} ${CXX_FLAGS} -c $< -o $@
-
-cps.o: cps.cpp cps.hpp ast.hpp
-	${CXX} ${CXX_FLAGS} -c $< -o $@
-
-token.o: token.cpp token.hpp
-	${CXX} ${CXX_FLAGS} -c $< -o $@
-
-parser.o: parser.cpp parser.hpp token.hpp ast.hpp
-	${CXX} ${CXX_FLAGS} -c $< -o $@
-
-ast.o: ast.cpp ast.hpp
-	${CXX} ${CXX_FLAGS} -c $< -o $@
+compiler.a: ${DEPS} ${OBJECTS}
+	ar rcs $@  ${OBJECTS}
 
 clean:
-	rm *.{o,a,gch}
+	rm compiler.a ${OBJECTS} ${DEPS}
+
+ifneq (${MAKECMDGOALS},clean)
+include ${DEPS}
+endif
+
+%.d: %.cpp
+	${CC} -MM ${CXX_FLAGS} $< | sed -e "s/\(.*.o\):/\1 $@:/g" > $@
+
+%.o: %.d
+	${CXX} ${CXX_FLAGS} -c $(shell echo $< | sed -e "s/\(.*\).d/\1.cpp/g") -o $@

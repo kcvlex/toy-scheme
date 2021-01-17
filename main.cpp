@@ -17,14 +17,16 @@ void test_tokenize(const std::string &s) {
     // while (!ts.finished()) std::cout << *ts.advance() << std::endl;
 }
 
-ASTNode* test_parser_and_visitor(const std::string &s) {
+SequenceNode* test_parser_and_visitor(const std::string &s) {
     TokenStream ts = std::move(Tokenizer::build(s));
     Parser parser(std::move(ts));
     auto root = parser.parse();
+    /*
     DebugASTNodeVisitor visitor;
-    auto lambda = dynamic_cast<EvalNode*>(root->get_seq()[0]);
     lambda->accept(visitor);
     return lambda;
+    */
+    return root;
 }
 
 auto test_sem_analyzer(const SequenceNode* const node) {
@@ -77,19 +79,19 @@ void test_cps(const ASTNode* const root) {
     AST2CPS visitor;
     root->accept(visitor);
     auto cps = visitor.res;
-    print_cps_code("tmp.scm", cps);
+    print_cps_code("tmp.test.scm", cps);
     delete cps;
 }
 
 int main() {
     std::string code = "((lambda (f a b) \n  (+ a b 1 2)) 42 43 44)\n";
-    auto lambda = test_parser_and_visitor(code);
-    test_cps(lambda);
-    delete lambda;
+    auto root = test_parser_and_visitor(code);
+    // auto lambda = dynamic_cast<EvalNode*>(root->get_seq()[0]);
+    test_cps(root);
     /*
     auto fcodes = test_sem_analyzer(root);
     test_asm(fcodes);
-    delete root;
     */
+    delete root;
     return 0;
 }
