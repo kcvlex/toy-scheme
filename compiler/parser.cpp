@@ -36,34 +36,22 @@ SequenceNode* Parser::parse() {
     return parse_seq();
 }
 
+ASTNode* Parser::parse_expr() {
+    if (is_lambda()) return parse_lambda();
+    if (is_begin()) return parse_seq();
+    if (*stream.head() == l_paren) return parse_eval();
+    if (is_dig((*stream.head())[0])) return parse_constant();
+    return parse_symbol();
+}
+
 EvalNode* Parser::parse_eval() {
     stream.eat(l_paren);
     EvalNode *res = new EvalNode();
-
+    res->add_child(parse_expr());
+    
     while (!stream.finished()) {
         if (*stream.head() == r_paren) break;
-        
-        if (is_lambda()) {
-            res->add_child(parse_lambda());
-            continue;
-        }
-
-        if (is_begin()) {
-            res->add_child(parse_seq());
-            continue;
-        }
-        
-        if (*stream.head() == l_paren) {
-            res->add_child(parse_eval());
-            continue;
-        }
-        
-        if (is_dig((*stream.head())[0])) {
-            res->add_child(parse_constant());
-            continue;
-        }
-        
-        res->add_child(parse_symbol());
+        res->add_child(parse_expr());
     }
 
     stream.eat(r_paren);
@@ -80,7 +68,7 @@ LambdaNode* Parser::parse_lambda() {
         symbols.push_back(parse_symbol());
     }
     stream.eat(r_paren);  // end args
-    auto body = parse_eval();
+    auto body = parse_expr();
     stream.eat(r_paren);  // end lambda
     return new LambdaNode(std::move(symbols), body);
 }
@@ -100,7 +88,7 @@ SequenceNode* Parser::parse_seq() {
     std::vector<ASTNode*> seq;
     while (!stream.finished()) {
         if (*stream.head() == r_paren) break;
-        seq.push_back(parse_eval());
+        seq.push_back(parse_expr());
     }
     stream.eat(r_paren);
     return new SequenceNode(std::move(seq));

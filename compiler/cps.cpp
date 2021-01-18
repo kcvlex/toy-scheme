@@ -171,11 +171,36 @@ void AST2CPS::visit(const LambdaNode* const node) {
     args.reserve(node->get_args().size());
     for (auto ptr : node->get_args()) args.push_back(ptr->get_symbol());
 
+    // F[[body]]
     node->get_body()->accept(*this);
+
+    // (F[[body]] k2)
     this->res = new ApplyCPS(this->res, { new VarCPS(k2) });
+
+    // (lambda args. (F[[body]] k2))
     this->res = new LambdaCPS(args, this->res);
+
+    /* 
+     * (lambda k2.
+     *   (lambda args. 
+     *     (F[[body]] k2)))
+     */
     this->res = new LambdaCPS({ k2 }, this->res);
+
+    /* 
+     * (k1
+     *   (lambda k2.
+     *     (lambda args. 
+     *       (F[[body]] k2))))
+     */
     this->res = new ApplyCPS(new VarCPS(k1), { this->res });
+    
+    /* 
+     * (lambda k1. (k1
+     *   (lambda k2.
+     *     (lambda args. 
+     *       (F[[body]] k2)))))
+     */
     this->res = new LambdaCPS({ k1 }, this->res);
 }
 
@@ -200,19 +225,33 @@ void AST2CPS::visit(const ConstantNode* const node) {
 
 void AST2CPS::visit(const SequenceNode* const node) {
     const auto k = get_cont_label();
-  
+
     auto gen_rec = [&] {
         auto f = [&](const std::size_t i, auto rec) -> void {
-            if (i == node->get_seq().size()) {
-                this->res = new VarCPS(k);
-                return;
-            }
-            const auto k_i = get_cont_label();
-            rec(i + 1, rec);
             AST2CPS visitor_i;
             node->get_seq()[i]->accept(visitor_i);
-            this->res = new LambdaCPS({ k_i }, new ApplyCPS(visitor_i.res, { this->res }));
+            
+            if (i + 1 == node->get_seq().size()) {
+                // (k v)
+                this->res = new ApplyCPS(new VarCPS(k), { new VarCPS("v") });
+                
+                // (lambda v. (k v))
+                this->res = new LambdaCPS({ "v" }, this->res);
+
+                // (F[[body_n]] (lambda v. (k v)))
+                this->res = new ApplyCPS(visitor_i.res, { this->res });
+            } else {
+                rec(i + 1, rec);
+                const std::string dummy = "dummy";
+                
+                // (lambda _. ...)
+                this->res = new LambdaCPS({ dummy }, this->res);
+
+                // (F[[body_i]] (lambda _. ...))
+                this->res = new ApplyCPS(visitor_i.res, { this->res });
+            }
         };
+
         f(0, f);
     };
 

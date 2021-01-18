@@ -11,12 +11,13 @@ struct Parser {
 
     SequenceNode* parse();
 
-//private:
+private:
     EvalNode* parse_eval();
     LambdaNode* parse_lambda();
     SymbolNode* parse_symbol();
     ConstantNode* parse_constant();
     SequenceNode* parse_seq();
+    ASTNode* parse_expr();
 
     bool is_lambda() const;
     bool is_begin() const;
