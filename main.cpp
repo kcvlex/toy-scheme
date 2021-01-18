@@ -81,7 +81,7 @@ void test_cps(const ASTNode* const root) {
 }
 
 int main() {
-    std::string code = "(lambda (aaa) aaa)\n((lambda (f a b)\n  (+ a b 1 2)) 42 43 44)\n";
+    std::string code = "(lambda (aaa) aaa)\n((lambda (f a b)\n  (define po 3) (+ a b 1 2 po)) 42 43 44)\n";
     auto root = test_parser_and_visitor(code);
     // auto lambda = dynamic_cast<EvalNode*>(root->get_seq()[0]);
     test_cps(root);

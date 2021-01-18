@@ -16,15 +16,22 @@ struct CPSNode {
 };
 
 struct LambdaCPS : public CPSNode {
-    LambdaCPS(std::vector<std::string> args_arg, node_ptr body_arg);
+    LambdaCPS(std::vector<std::string> args_arg,
+              std::vector<node_ptr> binds_arg,
+              node_ptr body_arg);
+    LambdaCPS(std::vector<std::string> args_arg,
+              node_ptr body_arg);
     virtual ~LambdaCPS() override;
-    const std::string& get_arg(const std::size_t i) const noexcept;
-    std::size_t get_arg_num() const noexcept;
+    const std::string& get_arg(const std::size_t i) const;
+    const_node_ptr get_bind(const std::size_t i) const;
     const_node_ptr get_body() const noexcept;
+    std::size_t get_arg_num() const noexcept;
+    std::size_t get_bind_num() const noexcept;
     virtual void accept(CPSVisitor &visitor) const override;
 
 private:
     std::vector<std::string> args;
+    std::vector<node_ptr> binds;
     node_ptr body;
 };
 
@@ -57,6 +64,18 @@ private:
     std::vector<node_ptr> args;
 };
 
+struct BindCPS : public CPSNode {
+    BindCPS(std::string name_arg, node_ptr value_arg);
+    virtual ~BindCPS() override;
+    const std::string& get_name() const noexcept;
+    const_node_ptr get_value() const noexcept;
+    virtual void accept(CPSVisitor &visitor) const override;
+
+private:
+    std::string name;
+    node_ptr value;
+};
+
 struct VarCPS : public CPSNode {
     VarCPS(std::string var_arg);
     virtual ~VarCPS();
@@ -85,12 +104,14 @@ struct AST2CPS : public ASTNodeVisitor {
     virtual void visit(const SymbolNode* const node) override;
     virtual void visit(const ConstantNode* const node) override;
     virtual void visit(const SequenceNode* const node) override;
+    virtual void visit(const BindNode* const node) override;
 };
 
 struct CPSVisitor {
     virtual void visit(const LambdaCPS* const cps) = 0;
     virtual void visit(const PrimitiveCPS* const cps) = 0;
     virtual void visit(const ApplyCPS* const cps) = 0;
+    virtual void visit(const BindCPS* const cps) = 0;
     virtual void visit(const VarCPS* const cps) = 0;
     virtual void visit(const ConstantCPS* const cps) = 0;
 };

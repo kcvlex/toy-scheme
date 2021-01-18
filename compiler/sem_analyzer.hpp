@@ -66,6 +66,7 @@ struct SemanticAnalyzer : public ASTNodeVisitor {
     virtual void visit(const SymbolNode* const node) override;
     virtual void visit(const ConstantNode* const node) override;
     virtual void visit(const SequenceNode* const node) override;
+    virtual void visit(const BindNode* const node) override;
 
     std::vector<FunctionCode> analyze(const SequenceNode* const nodes);
     
@@ -87,6 +88,7 @@ struct SimpleInstructionChecker : public ASTNodeVisitor {
     virtual void visit(const SymbolNode* const node) override;
     virtual void visit(const ConstantNode* const node) override;
     virtual void visit(const SequenceNode* const node) override;
+    virtual void visit(const BindNode* const node) override;
     std::optional<operation_type> res = std::optional<operation_type>(std::nullopt);
 };
 

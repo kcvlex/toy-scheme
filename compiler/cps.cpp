@@ -16,6 +16,7 @@ std::string get_cont_label() {
 void LambdaCPS::accept(CPSVisitor &visitor) const { visitor.visit(this); }
 void PrimitiveCPS::accept(CPSVisitor &visitor) const { visitor.visit(this); }
 void ApplyCPS::accept(CPSVisitor &visitor) const { visitor.visit(this); }
+void BindCPS::accept(CPSVisitor &visitor) const { visitor.visit(this); }
 void VarCPS::accept(CPSVisitor &visitor) const { visitor.visit(this); }
 void ConstantCPS::accept(CPSVisitor &visitor) const { visitor.visit(this); }
 
@@ -25,22 +26,40 @@ CPSNode::~CPSNode() {
 
 /******************** Lambda CPS ********************/
 
-LambdaCPS::LambdaCPS(std::vector<std::string> args_arg, node_ptr body_arg)
+LambdaCPS::LambdaCPS(std::vector<std::string> args_arg,
+                     std::vector<node_ptr> binds_arg,
+                     node_ptr body_arg)
     : args(std::move(args_arg)),
+      binds(std::move(binds_arg)),
       body(body_arg)
 {
 }
 
+LambdaCPS::LambdaCPS(std::vector<std::string> args_arg, 
+                     node_ptr body_arg)
+    : LambdaCPS(std::move(args_arg), { }, body_arg)
+{
+}
+
 LambdaCPS::~LambdaCPS() {
+    for (auto bind : binds) delete bind;
     delete body;
 }
 
-const std::string& LambdaCPS::get_arg(const std::size_t i) const noexcept {
+const std::string& LambdaCPS::get_arg(const std::size_t i) const {
     return args[i];
 }
 
 std::size_t LambdaCPS::get_arg_num() const noexcept {
     return args.size();
+}
+
+CPSNode::const_node_ptr LambdaCPS::get_bind(const std::size_t i) const {
+    return binds[i];
+}
+
+std::size_t LambdaCPS::get_bind_num() const noexcept {
+    return binds.size();
 }
 
 CPSNode::const_node_ptr LambdaCPS::get_body() const noexcept {
@@ -97,6 +116,29 @@ CPSNode::const_node_ptr ApplyCPS::get_arg(const std::size_t i) const noexcept {
 
 std::size_t ApplyCPS::get_arg_num() const noexcept {
     return args.size();
+}
+
+
+/******************** Bind CPS ********************/
+
+BindCPS::BindCPS(std::string name_arg, node_ptr value_arg)
+    : name(std::move(name_arg)),
+      value(value_arg)
+{
+    auto extract_value = new LambdaCPS({ "x" }, new VarCPS("x"));
+    value = new ApplyCPS(value, { extract_value });
+}
+
+BindCPS::~BindCPS() {
+    delete value;
+}
+
+const std::string& BindCPS::get_name() const noexcept {
+    return name;
+}
+
+CPSNode::const_node_ptr BindCPS::get_value() const noexcept {
+    return value;
 }
 
 
@@ -164,25 +206,37 @@ void AST2CPS::visit(const EvalNode* const node) {
     this->res = new LambdaCPS({ k }, this->res);
 }
 
+// FIXME : ONLY ACCEPT body := (define ...) (define ...) ... (define ...) (expr)
 void AST2CPS::visit(const LambdaNode* const node) {
     const auto k1 = get_cont_label();
     const auto k2 = get_cont_label();
+
+    // args
     std::vector<std::string> args;
-    args.reserve(node->get_args().size());
-    for (auto ptr : node->get_args()) args.push_back(ptr->get_symbol());
+    args.reserve(node->get_arg_num());
+    for (std::size_t i = 0; i != node->get_arg_num(); i++) args.push_back(node->get_arg(i));
+
+    // binds
+    std::vector<CPSNode::node_ptr> binds;
+    binds.reserve(node->get_body_num() - 1);
+    for (std::size_t i = 0; i + 1 != node->get_body_num(); i++) {
+        node->get_body(i)->accept(*this);
+        binds.push_back(this->res);
+    }
 
     // F[[body]]
-    node->get_body()->accept(*this);
+    node->get_body(node->get_body_num() - 1)->accept(*this);
 
     // (F[[body]] k2)
     this->res = new ApplyCPS(this->res, { new VarCPS(k2) });
 
-    // (lambda args. (F[[body]] k2))
-    this->res = new LambdaCPS(args, this->res);
+    // (lambda args. binds (F[[body]] k2))
+    this->res = new LambdaCPS(std::move(args), std::move(binds), this->res);
 
     /* 
      * (lambda k2.
      *   (lambda args. 
+     *     binds
      *     (F[[body]] k2)))
      */
     this->res = new LambdaCPS({ k2 }, this->res);
@@ -191,6 +245,7 @@ void AST2CPS::visit(const LambdaNode* const node) {
      * (k1
      *   (lambda k2.
      *     (lambda args. 
+     *       binds
      *       (F[[body]] k2))))
      */
     this->res = new ApplyCPS(new VarCPS(k1), { this->res });
@@ -199,6 +254,7 @@ void AST2CPS::visit(const LambdaNode* const node) {
      * (lambda k1. (k1
      *   (lambda k2.
      *     (lambda args. 
+     *       binds
      *       (F[[body]] k2)))))
      */
     this->res = new LambdaCPS({ k1 }, this->res);
@@ -259,6 +315,11 @@ void AST2CPS::visit(const SequenceNode* const node) {
     this->res = new LambdaCPS({ k }, this->res);
 }
 
+void AST2CPS::visit(const BindNode* const node) {
+    node->get_value()->accept(*this);
+    this->res = new BindCPS(node->get_name(), this->res);
+}
+
 
 namespace internal {
 
@@ -279,11 +340,23 @@ struct PrintCPS : public CPSVisitor {
 
     virtual void visit(const LambdaCPS* const cps) override {
         ofs << "(lambda ";
-        char elim = '(';
-        for (std::size_t i = 0; i != cps->get_arg_num(); i++) {
-            ofs << std::exchange(elim, ' ') << cps->get_arg(i);
+        
+        {
+            char elim = '(';
+            for (std::size_t i = 0; i != cps->get_arg_num(); i++) {
+                ofs << std::exchange(elim, ' ') << cps->get_arg(i);
+            }
         }
-        ofs << ") ";
+
+        ofs << ')';
+
+        {
+            for (std::size_t i = 0; i != cps->get_bind_num(); i++) {
+                ofs << ' ';
+                cps->get_bind(i)->accept(*this);
+            }
+        }
+
         cps->get_body()->accept(*this);
         ofs << ")";
     }
@@ -299,6 +372,12 @@ struct PrintCPS : public CPSVisitor {
             ofs << ' ';
             cps->get_arg(i)->accept(*this);
         }
+        ofs << ')';
+    }
+
+    virtual void visit(const BindCPS* const cps) override {
+        ofs << "(define " << cps->get_name() << ' ';
+        cps->get_value()->accept(*this);
         ofs << ')';
     }
 

@@ -105,6 +105,7 @@ void SemanticAnalyzer::visit(const ConstantNode* const node) {
 }
 
 void SemanticAnalyzer::visit(const LambdaNode* const node) {
+    /*
     // set args map
     table.set_arg_map(node, cur_nest);
 
@@ -129,6 +130,7 @@ void SemanticAnalyzer::visit(const LambdaNode* const node) {
     fcodes.emplace_back(f_label, std::move(res));
     cur_code = std::move(code_buf.back());
     code_buf.pop_back();
+    */
 }
 
 void SemanticAnalyzer::visit(const EvalNode* const node) {
@@ -227,6 +229,10 @@ void SemanticAnalyzer::visit(const SequenceNode* const node) {
                          imm2operand(0));
 }
 
+void SemanticAnalyzer::visit(const BindNode* const node) {
+    // FIXME
+}
+
 
 /******************** SimpleInstructionChecker ********************/
 
@@ -254,7 +260,7 @@ void SimpleInstructionChecker::visit(const EvalNode* const node) {
     res = std::optional(make_eval());
 }
 void SimpleInstructionChecker::visit(const LambdaNode* const node) {
-    res = std::optional(make_lambda_function(label));
+    // res = std::optional(make_lambda_function(label));
 }
 void SimpleInstructionChecker::visit(const SymbolNode* const node) {
     if (node->get_symbol() == "+") {
@@ -269,6 +275,9 @@ void SimpleInstructionChecker::visit(const ConstantNode* const node) {
 }
 void SimpleInstructionChecker::visit(const SequenceNode* const node) {
     res = std::optional(make_eval());
+}
+void SimpleInstructionChecker::visit(const BindNode* const node) {
+    // FIXME
 }
 
 }

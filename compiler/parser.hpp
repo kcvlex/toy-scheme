@@ -12,15 +12,18 @@ struct Parser {
     SequenceNode* parse();
 
 private:
-    EvalNode* parse_eval();
-    LambdaNode* parse_lambda();
-    SymbolNode* parse_symbol();
+    EvalNode*     parse_eval();
+    LambdaNode*   parse_lambda();
+    SymbolNode*   parse_symbol();
     ConstantNode* parse_constant();
     SequenceNode* parse_seq();
-    ASTNode* parse_expr();
+    BindNode*     parse_bind();
+    ASTNode*      parse_expr();
 
-    bool is_lambda() const;
-    bool is_begin() const;
+    bool is_lambda() const noexcept;
+    bool is_begin() const noexcept;
+    bool is_define() const noexcept;
+    bool lookup1(const std::string &s) const noexcept;
 
     TokenStream stream;
 };
