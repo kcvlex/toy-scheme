@@ -12,7 +12,7 @@ compiler.a: ${DEPS} ${OBJECTS}
 	ar rcs $@  ${OBJECTS}
 
 clean:
-	rm compiler.a ${OBJECTS} ${DEPS}
+	rm -f compiler.a ${OBJECTS} ${DEPS}
 
 ifneq (${MAKECMDGOALS},clean)
 include ${DEPS}

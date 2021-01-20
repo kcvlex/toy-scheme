@@ -163,15 +163,13 @@ void DebugASTNodeVisitor::visit(const EvalNode* const node) {
 
 void DebugASTNodeVisitor::visit(const LambdaNode* const node) {
     write_lines();
-    std::cout << "- LambdaNode";
-    char c = '(';
+    std::cout << "- LambdaNode(";
     for (std::size_t i = 0; i != node->get_arg_num(); i++) {
-        std::cout << std::exchange(c, ',') << node->get_arg(i);
+        std::cout << node->get_arg(i) << ',';
     }
     std::cout << ')' << std::endl;
     
     depth++;
-    write_lines();
     for (std::size_t i = 0; i != node->get_body_num(); i++) {
         node->get_body(i)->accept(*this);
     }
