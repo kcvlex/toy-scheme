@@ -31,13 +31,15 @@ ArgumentsMapper::ArgumentsMapper() {
 }
 
 void ArgumentsMapper::push(const LambdaNode* const lambda, const std::uint32_t cur_nest) {
+    /*
     auto rmap = gen_default_map();
     std::size_t sz = 0;
-    for (; sz != lambda->get_args().size(); sz++) {
-        const auto &arg = lambda->get_args()[sz];
+    for (; sz != lambda->get_arg_num(); sz++) {
+        const auto &arg = lambda->get_arg(sz);
         rmap[sz] = new SymboledValue(arg->get_symbol(), cur_nest, 0);
     }
     history.emplace(rmap, sz);
+    */
 }
 
 void ArgumentsMapper::pop() {

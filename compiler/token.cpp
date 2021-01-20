@@ -10,6 +10,7 @@ std::string surround(std::string s) {
     std::string res = "(begin \n";
     res += std::move(s);
     res += ")";
+    std::cout << res << std::endl;
     return res;
 }
 

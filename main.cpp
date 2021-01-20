@@ -3,27 +3,37 @@
 #include <limits>
 #include "compiler/token.hpp"
 #include "compiler/parser.hpp"
-#include "compiler/three_address_code.hpp"
-#include "compiler/sem_analyzer.hpp"
-#include "assembler/assembler.hpp"
+#include "compiler/closure.hpp"
+#include "compiler/cps.hpp"
 #include "util/enum2str.hpp"
 
+#if 0
+#include "assembler/assembler.hpp"
+#include "compiler/three_address_code.hpp"
+#include "compiler/sem_analyzer.hpp"
+#endif
+
 using namespace compiler;
+
+#if 0
 using namespace assembler;
+#endif
 
 void test_tokenize(const std::string &s) {
     TokenStream ts = std::move(Tokenizer::build(s));
-    while (!ts.finished()) std::cout << *ts.advance() << std::endl;
+    // while (!ts.finished()) std::cout << *ts.advance() << std::endl;
 }
 
 SequenceNode* test_parser_and_visitor(const std::string &s) {
     TokenStream ts = std::move(Tokenizer::build(s));
     Parser parser(std::move(ts));
     auto root = parser.parse();
-    DebugConstNodeVisitor visitor;
+    DebugASTNodeVisitor visitor;
     root->accept(visitor);
     return root;
 }
+
+#if 0
 
 auto test_sem_analyzer(const SequenceNode* const node) {
     SemanticAnalyzer s_analy;
@@ -71,11 +81,35 @@ void test_asm(std::vector<FunctionCode> fcodes) {
     }
 }
 
+#endif
+
+void test_cps(const ASTNode* const root) {
+    AST2CPS visitor;
+    root->accept(visitor);
+    auto cps = visitor.res;
+    closure_translation(cps);
+    print_cps_code("tmp.test.scm", cps);
+    delete cps;
+}
+
+// https://stackoverflow.com/questions/2602013/read-whole-ascii-file-into-c-stdstring
+std::string read_file(const std::string &filename) {
+    std::ifstream ifs(filename);
+    std::string code;
+    code.assign(std::istreambuf_iterator<char>(ifs),
+                std::istreambuf_iterator<char>());
+    ifs.close();
+    return code;
+}
+
 int main() {
-    std::string code = "((lambda (f a b) \n  (+ a (+ b (+ 1 2)))) 42 43 44)\n";
+    std::string code = std::move(read_file("test1.scm"));
     auto root = test_parser_and_visitor(code);
+    test_cps(root);
+    /*
     auto fcodes = test_sem_analyzer(root);
     test_asm(fcodes);
+    */
     delete root;
     return 0;
 }

@@ -1,8 +1,9 @@
 prog
 *.a
 *.o
+*.d
 *.gch
 gomi
 a.out
 main
-*-test
+*test*

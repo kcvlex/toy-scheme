@@ -1,15 +1,17 @@
 #include "ast.hpp"
 #include <iostream>
+#include <utility>
 
 namespace compiler {
 
 /***** For Visitor *****/
 
-void EvalNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
-void LambdaNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
-void SymbolNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
-void ConstantNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
-void SequenceNode::accept(ConstNodeVisitor &visitor) const { visitor.visit(this); }
+void EvalNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
+void LambdaNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
+void SymbolNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
+void ConstantNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
+void SequenceNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
+void BindNode::accept(ASTNodeVisitor &visitor) const { visitor.visit(this); }
 
 
 /***** AST Node *****/
@@ -44,26 +46,31 @@ std::size_t EvalNode::size() const noexcept {
 
 /***** Lambda Node *****/
 
-LambdaNode::LambdaNode(std::vector<SymbolNode*> args_arg, node_ptr body_arg)
-    : args(std::move(args_arg)), body(body_arg)
+LambdaNode::LambdaNode(std::vector<std::string> args_arg, 
+                       std::vector<node_ptr> bodies_arg)
+    : args(std::move(args_arg)), 
+      bodies(std::move(bodies_arg))
 {
 }
 
 LambdaNode::~LambdaNode() {
-    for (auto arg : args) delete arg;
-    delete body;
+    for (auto body : bodies) delete body;
 }
 
-const std::vector<SymbolNode*>& LambdaNode::get_args() const {
-    return args;
+const std::string& LambdaNode::get_arg(const std::size_t i) const {
+    return args[i];
 }
 
-std::size_t LambdaNode::arg_size() const noexcept {
+ASTNode::const_node_ptr LambdaNode::get_body(const std::size_t i) const {
+    return bodies[i];
+}
+
+std::size_t LambdaNode::get_arg_num() const noexcept {
     return args.size();
 }
 
-const ASTNode::node_ptr LambdaNode::get_body() const {
-    return body;
+std::size_t LambdaNode::get_body_num() const noexcept {
+    return bodies.size();
 }
 
 
@@ -91,14 +98,15 @@ ConstantNode::ConstantNode(int val_arg) : val(val_arg)
 ConstantNode::~ConstantNode() {
 }
 
-int ConstantNode::get_value() const {
+int ConstantNode::get_value() const noexcept {
     return val;
 }
 
 
 /***** Sequence Node *****/
 
-SequenceNode::SequenceNode(std::vector<ASTNode*> seq_arg) : seq(std::move(seq_arg)) 
+SequenceNode::SequenceNode(std::vector<ASTNode*> seq_arg) 
+    : seq(std::move(seq_arg)) 
 {
 }
 
@@ -111,19 +119,40 @@ const SequenceNode::seq_type& SequenceNode::get_seq() const noexcept {
 }
 
 
+/***** Bind Node *****/
+
+BindNode::BindNode(std::string name_arg, node_ptr value_arg)
+    : name(std::move(name_arg)),
+      value(value_arg)
+{
+}
+
+BindNode::~BindNode() {
+    delete value;
+}
+
+const std::string& BindNode::get_name() const noexcept {
+    return name;
+}
+
+ASTNode::const_node_ptr BindNode::get_value() const noexcept {
+    return value;
+}
+
+
 /***** Visitor For Debug *****/
 
-DebugConstNodeVisitor::DebugConstNodeVisitor(int depth_arg)
+DebugASTNodeVisitor::DebugASTNodeVisitor(int depth_arg)
     : depth(depth_arg)
 {
 }
 
-DebugConstNodeVisitor::DebugConstNodeVisitor()
-    : DebugConstNodeVisitor(0)
+DebugASTNodeVisitor::DebugASTNodeVisitor()
+    : DebugASTNodeVisitor(0)
 {
 }
 
-void DebugConstNodeVisitor::visit(const EvalNode* const node) {
+void DebugASTNodeVisitor::visit(const EvalNode* const node) {
     write_lines();
     std::cout << "- EvalNode" << std::endl;
     depth++;
@@ -132,29 +161,32 @@ void DebugConstNodeVisitor::visit(const EvalNode* const node) {
     depth--;
 }
 
-void DebugConstNodeVisitor::visit(const LambdaNode* const node) {
+void DebugASTNodeVisitor::visit(const LambdaNode* const node) {
     write_lines();
-    std::cout << "- LambdaNode" << std::endl;
+    std::cout << "- LambdaNode(";
+    for (std::size_t i = 0; i != node->get_arg_num(); i++) {
+        std::cout << node->get_arg(i) << ',';
+    }
+    std::cout << ')' << std::endl;
+    
     depth++;
-    decltype(auto) args = node->get_args();
-    for (auto arg : args) arg->accept(*this);
-    write_lines();
-    std::cout << std::endl;
-    node->get_body()->accept(*this);
+    for (std::size_t i = 0; i != node->get_body_num(); i++) {
+        node->get_body(i)->accept(*this);
+    }
     depth--;
 }
 
-void DebugConstNodeVisitor::visit(const SymbolNode* const node) {
+void DebugASTNodeVisitor::visit(const SymbolNode* const node) {
     write_lines();
     std::cout << "- SymbolNode(" << node->get_symbol() << ")\n";
 }
 
-void DebugConstNodeVisitor::visit(const ConstantNode* const node) {
+void DebugASTNodeVisitor::visit(const ConstantNode* const node) {
     write_lines();
     std::cout << "- ConstantNode(" << node->get_value() << ")\n";
 }
 
-void DebugConstNodeVisitor::visit(const SequenceNode* const node) {
+void DebugASTNodeVisitor::visit(const SequenceNode* const node) {
     write_lines();
     std::cout << "- SequenceNode\n";
     depth++;
@@ -162,7 +194,15 @@ void DebugConstNodeVisitor::visit(const SequenceNode* const node) {
     depth--;
 }
 
-void DebugConstNodeVisitor::write_lines() {
+void DebugASTNodeVisitor::visit(const BindNode* const node) {
+    write_lines();
+    std::cout << "- BindNode(" << node->get_name() << ")\n";
+    depth++;
+    node->get_value()->accept(*this);
+    depth--;
+}
+
+void DebugASTNodeVisitor::write_lines() {
     for (int i = 0; i < depth; i++) std::cout << "|";
 }
 

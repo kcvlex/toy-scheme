@@ -58,7 +58,7 @@ using lambda_function_type = std::uint32_t;  // label
 using symbol_type = std::add_pointer_t<const SymbolNode>;
 using operation_type = std::variant<BuiltinOperation, lambda_function_type, symbol_type, eval_type>;
 
-struct SemanticAnalyzer : public ConstNodeVisitor {
+struct SemanticAnalyzer : public ASTNodeVisitor {
     SemanticAnalyzer();
 
     virtual void visit(const EvalNode* const node) override;
@@ -66,6 +66,7 @@ struct SemanticAnalyzer : public ConstNodeVisitor {
     virtual void visit(const SymbolNode* const node) override;
     virtual void visit(const ConstantNode* const node) override;
     virtual void visit(const SequenceNode* const node) override;
+    virtual void visit(const BindNode* const node) override;
 
     std::vector<FunctionCode> analyze(const SequenceNode* const nodes);
     
@@ -81,12 +82,13 @@ private:
     OutputCodeStream callee_epilog();
 };
 
-struct SimpleInstructionChecker : public ConstNodeVisitor {
+struct SimpleInstructionChecker : public ASTNodeVisitor {
     virtual void visit(const EvalNode* const node) override;
     virtual void visit(const LambdaNode* const node) override;
     virtual void visit(const SymbolNode* const node) override;
     virtual void visit(const ConstantNode* const node) override;
     virtual void visit(const SequenceNode* const node) override;
+    virtual void visit(const BindNode* const node) override;
     std::optional<operation_type> res = std::optional<operation_type>(std::nullopt);
 };
 
