@@ -24,7 +24,7 @@ void test_tokenize(const std::string &s) {
     // while (!ts.finished()) std::cout << *ts.advance() << std::endl;
 }
 
-SequenceNode* test_parser_and_visitor(const std::string &s) {
+ASTNode* test_parser_and_visitor(const std::string &s) {
     TokenStream ts = std::move(Tokenizer::build(s));
     Parser parser(std::move(ts));
     auto root = parser.parse();

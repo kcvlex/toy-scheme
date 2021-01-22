@@ -9,7 +9,7 @@ namespace compiler {
 struct Parser {
     Parser(TokenStream stream_arg);
 
-    SequenceNode* parse();
+    ASTNode* parse();
 
 private:
     EvalNode*     parse_eval();

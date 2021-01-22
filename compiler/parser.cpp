@@ -39,8 +39,8 @@ bool Parser::is_define() const noexcept {
     return lookup1(define_symbol);
 }
 
-SequenceNode* Parser::parse() {
-    return parse_seq();
+ASTNode* Parser::parse() {
+    return parse_eval();
 }
 
 ASTNode* Parser::parse_expr() {

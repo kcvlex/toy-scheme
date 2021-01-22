@@ -7,9 +7,9 @@ namespace compiler {
 namespace {
 
 std::string surround(std::string s) {
-    std::string res = "(begin \n";
+    std::string res = "((lambda () \n";
     res += std::move(s);
-    res += ")";
+    res += "))";
     std::cout << res << std::endl;
     return res;
 }

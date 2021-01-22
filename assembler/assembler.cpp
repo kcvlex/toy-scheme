@@ -1,5 +1,5 @@
 #include "assembler.hpp"
-#include "bit_operation.hpp"
+#include "util/bit_operation.hpp"
 #include "util/enum2str.hpp"
 #include <algorithm>
 #include <cassert>

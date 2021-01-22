@@ -4,7 +4,28 @@
 namespace compiler {
 
 void CollectExternRefs::visit(LambdaCPS* const cps) {
-    // into another scope
+    std::set<std::string> added;
+
+    auto add_local_var = [&](const std::string &s) {
+        const auto sz0 = inner.size();
+        inner.insert(s);
+        const auto sz1 = inner.size();
+        if (sz0 != sz1) added.insert(s);
+    };
+
+    for (std::size_t i = 0; i != cps->get_arg_num(); i++) {
+        add_local_var(cps->get_arg(i));
+    }
+
+    for (std::size_t i = 0; i != cps->get_bind_num(); i++) {
+        const auto bind = cps->get_bind(i);
+        add_local_var(bind->get_name());
+        bind->get_value()->accept(*this);
+    }
+
+    cps->get_body()->accept(*this);
+
+    for (const auto &e : added) inner.erase(e);
 }
 
 void CollectExternRefs::visit(PrimitiveCPS* const cps) {
@@ -25,7 +46,7 @@ void CollectExternRefs::visit(VarCPS* const cps) {
     decltype(auto) name = cps->get_var();
     if (is_inner_var(name)) return;
     outer.insert(name);
-    cps->clsr_flag = true;
+    cps->lex_scope_flag = true;
 }
 
 void CollectExternRefs::visit(ConstantCPS* const cps) {
@@ -38,25 +59,15 @@ bool CollectExternRefs::is_inner_var(const std::string &name) const noexcept {
 
 void set_closure(LambdaCPS* const lambda) {
     CollectExternRefs cer;
-
-    for (std::size_t i = 0; i != lambda->get_arg_num(); i++) {
-        cer.inner.insert(lambda->get_arg(i));
-    }
-
-    for (std::size_t i = 0; i != lambda->get_bind_num(); i++) {
-        const auto bind = lambda->get_bind(i);
-        cer.inner.insert(bind->get_name());
-    }
-
-    lambda->get_body()->accept(cer);
-    if (!cer.outer.empty()) lambda->clsr = new ClosureTable(cer.outer);
+    lambda->accept(cer);
+    if (!cer.outer.empty()) lambda->lex_scope = new LexicalScope(cer.outer);
 }
     
 void ClosureTranslator::visit(LambdaCPS* const cps) {
     set_closure(cps);
 
-    const auto store = this->clsr;
-    this->clsr = cps->clsr;
+    const auto store = this->lex_scope;
+    this->lex_scope = cps->lex_scope;
 
     for (std::size_t i = 0; i != cps->get_bind_num(); i++) {
         const auto bind = cps->get_bind(i);
@@ -65,7 +76,7 @@ void ClosureTranslator::visit(LambdaCPS* const cps) {
 
     cps->get_body()->accept(*this);
 
-    this->clsr = store;
+    this->lex_scope = store;
 }
 
 void ClosureTranslator::visit(ApplyCPS* const cps) {
@@ -80,8 +91,8 @@ void ClosureTranslator::visit(BindCPS* const cps) {
 }
 
 void ClosureTranslator::visit(VarCPS* const cps) {
-    if (!cps->clsr_flag) return;
-    cps->set_clsr(clsr);
+    if (!cps->lex_scope_flag) return;
+    cps->set_lex_scope(lex_scope);
 }
 
 void ClosureTranslator::visit(PrimitiveCPS* const cps) {

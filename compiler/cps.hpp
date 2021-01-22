@@ -3,7 +3,7 @@
 
 #include <fstream>
 #include "ast.hpp"
-#include "closure_table.hpp"
+#include "lexical_scope.hpp"
 
 namespace compiler {
 
@@ -69,7 +69,7 @@ struct LambdaCPS : public CPSNode {
     using bind_ptr = BindCPS*;
     using const_bind_ptr = BindCPS* const;
 
-    ClosureTable* clsr;
+    LexicalScope* lex_scope;
 
     LambdaCPS(std::vector<std::string> args_arg,
               std::vector<bind_ptr> binds_arg,
@@ -93,23 +93,23 @@ private:
 };
 
 struct VarCPS : public CPSNode {
-    using clsr_ptr = const ClosureTable*;
+    using lex_scope_ptr = const LexicalScope*;
 
-    bool clsr_flag;
+    bool lex_scope_flag;
     
     VarCPS(std::string var_arg);
     virtual ~VarCPS();
     const std::string& get_var() const noexcept;
-    void set_clsr(const clsr_ptr val) noexcept;
-    clsr_ptr get_clsr() const noexcept;
-    ssize_t get_clsr_idx() const noexcept;
+    void set_lex_scope(const lex_scope_ptr val) noexcept;
+    lex_scope_ptr get_lex_scope() const noexcept;
+    ssize_t get_lex_scope_idx() const noexcept;
     virtual void accept(CPSVisitor &visitor) const override;
     virtual void accept(ModifyCPSVisitor &visitor) override;
 
 private:
     std::string var;
-    clsr_ptr clsr;
-    ssize_t clsr_idx;
+    lex_scope_ptr lex_scope;
+    ssize_t lex_scope_idx;
 };
 
 struct ConstantCPS : public CPSNode {

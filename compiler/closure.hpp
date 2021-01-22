@@ -30,7 +30,7 @@ struct ClosureTranslator : public ModifyCPSVisitor {
     virtual void visit(ConstantCPS* const cps) override;
 
 private:
-    ClosureTable* clsr = nullptr;
+    LexicalScope* lex_scope = nullptr;
 };
 
 void closure_translation(CPSNode* const root);

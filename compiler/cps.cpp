@@ -37,7 +37,7 @@ CPSNode::~CPSNode() {
 LambdaCPS::LambdaCPS(std::vector<std::string> args_arg,
                      std::vector<bind_ptr> binds_arg,
                      node_ptr body_arg)
-    : clsr(nullptr),
+    : lex_scope(nullptr),
       args(std::move(args_arg)),
       binds(std::move(binds_arg)),
       body(body_arg)
@@ -48,7 +48,7 @@ LambdaCPS::LambdaCPS(std::vector<std::string> args_arg,
                      node_ptr body_arg)
     : LambdaCPS(std::move(args_arg), { }, body_arg)
 {
-    if (clsr) delete clsr;
+    if (lex_scope) delete lex_scope;
 }
 
 LambdaCPS::~LambdaCPS() {
@@ -167,10 +167,10 @@ CPSNode::const_node_ptr BindCPS::get_value() const noexcept {
 /******************** Var CPS ********************/
 
 VarCPS::VarCPS(std::string var_arg)
-    : clsr_flag(false),
+    : lex_scope_flag(false),
       var(std::move(var_arg)),
-      clsr(nullptr),
-      clsr_idx(-1)
+      lex_scope(nullptr),
+      lex_scope_idx(-1)
 {
 }
 
@@ -181,17 +181,17 @@ const std::string& VarCPS::get_var() const noexcept {
     return var;
 }
 
-void VarCPS::set_clsr(const clsr_ptr val) noexcept {
-    clsr = val;
-    clsr_idx = clsr->get_idx(var);
+void VarCPS::set_lex_scope(const lex_scope_ptr val) noexcept {
+    lex_scope = val;
+    lex_scope_idx = lex_scope->get_idx(var);
 }
 
-VarCPS::clsr_ptr VarCPS::get_clsr() const noexcept {
-    return clsr;
+VarCPS::lex_scope_ptr VarCPS::get_lex_scope() const noexcept {
+    return lex_scope;
 }
     
-ssize_t VarCPS::get_clsr_idx() const noexcept {
-    return clsr_idx;
+ssize_t VarCPS::get_lex_scope_idx() const noexcept {
+    return lex_scope_idx;
 }
 
 
@@ -212,6 +212,7 @@ std::int32_t ConstantCPS::get_value() const noexcept {
 
 /******************** CPS transformation ********************/
 
+// (f a_1 a_2 ... a_n)
 void AST2CPS::visit(const EvalNode* const node) {
     const auto k = get_cont_label();
     std::vector<CPSNode::node_ptr> args;
@@ -220,13 +221,17 @@ void AST2CPS::visit(const EvalNode* const node) {
     auto gen_rec = [&] {
         auto f = [&](const std::size_t i, auto rec) -> void {
             if (i == node->get_children().size()) {
+                // (f_node k)
                 const auto f_k = new ApplyCPS(f_node, { new VarCPS(k) });
+
+                // ((f_node k) args)
                 this->res = new ApplyCPS(f_k, args);
                 return;
             }
             
             const auto k_i = get_cont_label();
             if (!f_node) {
+                // f_node = F[[f]]
                 f_node = new VarCPS(k_i);
             } else {
                 args.push_back(new VarCPS(k_i));
@@ -235,12 +240,27 @@ void AST2CPS::visit(const EvalNode* const node) {
             rec(i + 1, rec);
             AST2CPS visitor_i;
             node->get_children()[i]->accept(visitor_i);
+
+            /*
+             * (F[[a_i]]
+             *   (lambda (k) this->res))
+             */
             this->res = new ApplyCPS(visitor_i.res, { new LambdaCPS({ k_i }, this->res) });
         };
         f(0, f);
     };
 
     gen_rec();
+
+    /*
+     * (lambda (k)
+     *   (F[[a_1]]
+     *     (lambda (v_1)
+     *       (F[[a_2]]
+     *         (lambda (v_2) ...
+     *           (F[[f]]
+     *             (lambda (f_k) ((f_k) k) v_1 v_2 ... v_n)))))))
+     */
     this->res = new LambdaCPS({ k }, this->res);
 }
 
@@ -402,13 +422,13 @@ struct PrintCPS : public CPSVisitor {
             ofs << ")";
         };
 
-        if (cps->clsr) {
+        if (cps->lex_scope) {
             ofs << "((lambda ("
-                << cps->clsr->get_name()
+                << cps->lex_scope->get_name()
                 << ") ";
             gen();
             ofs << ") (cons*";
-            for (const auto &e : cps->clsr->get_refs()) ofs << ' ' << e;
+            for (const auto &e : cps->lex_scope->get_refs()) ofs << ' ' << e;
             ofs << " ()))";
         } else {
             gen();
@@ -436,13 +456,13 @@ struct PrintCPS : public CPSVisitor {
     }
 
     virtual void visit(const VarCPS* const cps) override {
-        if (!cps->clsr_flag) {
+        if (!cps->lex_scope_flag) {
             ofs << cps->get_var();
         } else {
             ofs << "(list-ref " 
-                << cps->get_clsr()->get_name()
+                << cps->get_lex_scope()->get_name()
                 << ' '
-                << cps->get_clsr_idx()
+                << cps->get_lex_scope_idx()
                 << ')';
         }
     }
