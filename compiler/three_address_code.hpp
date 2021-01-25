@@ -1,5 +1,5 @@
-#ifndef INCLUDE_THREE_ADDRESS_CODE
-#define INCLUDE_THREE_ADDRESS_CODE
+#ifndef INCLUDE_COMPILER_THREE_ADDRESS_CODE
+#define INCLUDE_COMPILER_THREE_ADDRESS_CODE
 
 #include <utility>
 #include <cstdint>
@@ -10,13 +10,15 @@
 #include <array>
 #include <sstream>
 #include "registers.hpp"
-#include "simple_register_allocator.hpp"
 
 namespace compiler {
 
 using imm_value_type = std::int16_t;
-using label_type = std::int32_t;  // FIXME
-using Operand = std::variant<Reg, imm_value_type, label_type>;
+using label_type = std::string;  // FIXME
+using reg_type = std::variant<PhysicalRegister, VirtualRegister> 
+using Operand = std::variant<reg_type, 
+                             imm_value_type, 
+                             label_type>;
 
 enum class Instructions {
     LUI = 0,
@@ -31,7 +33,8 @@ enum class Instructions {
     Size,
 };
 
-Operand reg2operand(const Reg reg);
+Operand preg2operand(const PhysicalRegister preg);
+Operand vreg2operand(const VirtualRegister vreg);
 Operand imm2operand(const imm_value_type imm);
 Operand label2operand(const label_type label);
 
@@ -55,82 +58,38 @@ struct ThreeAddressCode {
                      const Operand op2, 
                      const Operand op3);
 
-    void read(Reg &r1, Reg &r2, Reg &r3) const;
-    void read(Reg &r1, Reg &r2, imm_value_type &imm) const;
-    void read(Reg &r1, Reg &r2, label_type &label) const;
-    void read(Reg &r1, label_type &label) const;
+    /*
+    void read(reg_type &r1, reg_type &r2, reg_type &r3) const;
+    void read(reg_type &r1, reg_type &r2, imm_value_type &imm) const;
+    void read(reg_type &r1, reg_type &r2, label_type &label) const;
+    void read(reg_type &r1, label_type &label) const;
+    */
 
-    bool has_side_effect(const Reg reg) const noexcept;
+    bool has_side_effect(const reg_type reg) const noexcept;
+
+    // offset(base) <- src
+    static ThreeAddressCode make_sw(const reg_type src,
+                                    const reg_type base,
+                                    const imm_value_type offset);
+
+    // dst <- offset(base)
+    static ThreeAddressCode make_lw(const reg_type dst, 
+                                    const reg_type base, 
+                                    const imm_value_type offset);
+
+    static ThreeAddressCode make_push(const reg_type src);
+    static ThreeAddressCode make_pop(const reg_type dst);
+    static ThreeAddressCode make_assign(const reg_type dst, const reg_type src);
+    static ThreeAddressCode make_nop();
 };
 
 std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val);
 
-struct InputCodeStream {
-    using buffer_type = std::vector<ThreeAddressCode>;
-    using const_itr = buffer_type::const_iterator;
 
-    InputCodeStream(buffer_type buf_arg);
+struct CodeSequence : public std::vector<ThreeAddressCode> {
+    using vector<ThreeAddressCode>::vector;
 
-    const_itr get() const;
-    void advance();
-    void advance(std::size_t s);
-    bool finished() const noexcept;
-    std::size_t entire_size() const noexcept;
-
-private:
-    buffer_type buf;
-    const_itr cur;
-};
-
-// https://stackoverflow.com/questions/18290523/is-a-default-move-constructor-equivalent-to-a-member-wise-move-constructor
-struct OutputCodeStream {
-    OutputCodeStream();
-    OutputCodeStream(const OutputCodeStream&) = default;
-    OutputCodeStream(OutputCodeStream&&) = default;
-    OutputCodeStream& operator=(const OutputCodeStream&) = default;
-    OutputCodeStream& operator=(OutputCodeStream&&) = default;
-
-    OutputCodeStream& append_code(ThreeAddressCode code);
-    OutputCodeStream& append_code(const Instructions instr);
-    OutputCodeStream& append_code(const Instructions instr, 
-                                  const Operand op1);
-    OutputCodeStream& append_code(const Instructions instr, 
-                                  const Operand op1, 
-                                  const Operand op2);
-    OutputCodeStream& append_code(const Instructions instr, 
-                                  const Operand op1, 
-                                  const Operand op2,
-                                  const Operand op3);
-
-    // offset(base) <- src
-    OutputCodeStream& append_sw_code(const Reg src, 
-                                     const Reg base, 
-                                     const imm_value_type offset);
-
-    // dst <- offset(base)
-    OutputCodeStream& append_lw_code(const Reg dst, 
-                                     const Reg base, 
-                                     const imm_value_type offset);
-
-    OutputCodeStream& append_push_code(const Reg src);
-    OutputCodeStream& append_pop_code(const Reg dst);
-    OutputCodeStream& append_assign_code(const Reg dst, const Reg src);
-    OutputCodeStream& append_nop_code();
-
-    void clear();
-    OutputCodeStream& concat(const OutputCodeStream &oth);
-    OutputCodeStream& concat(OutputCodeStream &&oth);
-    
-    InputCodeStream convert();
-    std::size_t entire_size() const noexcept;
-
-    static OutputCodeStream save_caller_saved_regs(const SimpleRegisterAllocator &reg_alloc);
-    static OutputCodeStream save_callee_saved_regs(const SimpleRegisterAllocator &reg_alloc);
-    static OutputCodeStream restore_caller_saved_regs(const SimpleRegisterAllocator &reg_alloc);
-    static OutputCodeStream restore_callee_saved_regs(const SimpleRegisterAllocator &reg_alloc);
-
-private:
-    std::vector<ThreeAddressCode> buf;
+    CodeSequence& append_code(ThreeAddressCode code);
 };
 
 }

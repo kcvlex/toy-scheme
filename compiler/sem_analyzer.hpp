@@ -1,5 +1,5 @@
-#ifndef INCLUDE_SEM_ANALYZER
-#define INCLUDE_SEM_ANALYZER
+#ifndef INCLUDE_COMPILER_SEM_ANALYZER
+#define INCLUDE_COMPILER_SEM_ANALYZER
 
 #include "ast.hpp"
 #include "symbol_table.hpp"

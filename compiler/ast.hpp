@@ -1,5 +1,5 @@
-#ifndef INCLUDE_AST
-#define INCLUDE_AST
+#ifndef INCLUDE_COMPILER_AST
+#define INCLUDE_COMPILER_AST
 
 #include <vector>
 #include <string>

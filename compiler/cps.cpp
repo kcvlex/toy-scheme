@@ -37,7 +37,8 @@ CPSNode::~CPSNode() {
 LambdaCPS::LambdaCPS(std::vector<std::string> args_arg,
                      std::vector<bind_ptr> binds_arg,
                      node_ptr body_arg)
-    : lex_scope(nullptr),
+    : ext_refs(nullptr),
+      ex_scope(nullptr),
       args(std::move(args_arg)),
       binds(std::move(binds_arg)),
       body(body_arg)
@@ -48,7 +49,7 @@ LambdaCPS::LambdaCPS(std::vector<std::string> args_arg,
                      node_ptr body_arg)
     : LambdaCPS(std::move(args_arg), { }, body_arg)
 {
-    if (lex_scope) delete lex_scope;
+    if (ext_refs) delete ext_refs;
 }
 
 LambdaCPS::~LambdaCPS() {
@@ -167,10 +168,9 @@ CPSNode::const_node_ptr BindCPS::get_value() const noexcept {
 /******************** Var CPS ********************/
 
 VarCPS::VarCPS(std::string var_arg)
-    : lex_scope_flag(false),
-      var(std::move(var_arg)),
-      lex_scope(nullptr),
-      lex_scope_idx(-1)
+    : var(std::move(var_arg)),
+      rtype(RefTypeTag::Unknown),
+      idx()
 {
 }
 
@@ -179,19 +179,6 @@ VarCPS::~VarCPS() {
 
 const std::string& VarCPS::get_var() const noexcept {
     return var;
-}
-
-void VarCPS::set_lex_scope(const lex_scope_ptr val) noexcept {
-    lex_scope = val;
-    lex_scope_idx = lex_scope->get_idx(var);
-}
-
-VarCPS::lex_scope_ptr VarCPS::get_lex_scope() const noexcept {
-    return lex_scope;
-}
-    
-ssize_t VarCPS::get_lex_scope_idx() const noexcept {
-    return lex_scope_idx;
 }
 
 
@@ -422,13 +409,13 @@ struct PrintCPS : public CPSVisitor {
             ofs << ")";
         };
 
-        if (cps->lex_scope) {
+        if (cps->ext_refs) {
             ofs << "((lambda ("
-                << cps->lex_scope->get_name()
+                << cps->ext_refs->get_name()
                 << ") ";
             gen();
             ofs << ") (cons*";
-            for (const auto &e : cps->lex_scope->get_refs()) ofs << ' ' << e;
+            for (const auto &e : cps->ext_refs->get_refs()) ofs << ' ' << e;
             ofs << " ()))";
         } else {
             gen();
@@ -456,13 +443,13 @@ struct PrintCPS : public CPSVisitor {
     }
 
     virtual void visit(const VarCPS* const cps) override {
-        if (!cps->lex_scope_flag) {
+        if (!cps->ext_refs_flag) {
             ofs << cps->get_var();
         } else {
             ofs << "(list-ref " 
-                << cps->get_lex_scope()->get_name()
+                << cps->get_ext_refs()->get_name()
                 << ' '
-                << cps->get_lex_scope_idx()
+                << cps->get_ext_refs_idx()
                 << ')';
         }
     }

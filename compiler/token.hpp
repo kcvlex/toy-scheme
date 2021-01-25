@@ -1,5 +1,5 @@
-#ifndef INCLUDE_TOKENIZER
-#define INCLUDE_TOKENIZER
+#ifndef INCLUDE_COMPILER_TOKENIZER
+#define INCLUDE_COMPILER_TOKENIZER
 
 #include <vector>
 #include <string>

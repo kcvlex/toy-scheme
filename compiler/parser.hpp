@@ -1,5 +1,5 @@
-#ifndef INCLUDE_PARSER
-#define INCLUDE_PARSER
+#ifndef INCLUDE_COMPILER_PARSER
+#define INCLUDE_COMPILER_PARSER
 
 #include "token.hpp"
 #include "ast.hpp"
