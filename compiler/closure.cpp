@@ -2,6 +2,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <cassert>
+#include "util.hpp"
 
 namespace compiler {
 
@@ -44,12 +45,19 @@ void ClosureRecordDistributor::add_child(LambdaCPS* const child) {
 
 void ClosureRecordDistributor::build_clsr_record_factory() {
     ClosureRecordFactoryBuilder builder;
-    for (const auto child : children) builder.append(child->get_raw_ext_refs());
+    builder.append(lambda->get_raw_ext_refs());
+    for (std::size_t i = 0; i != lambda->get_arg_num(); i++) {
+        builder.append(lambda->get_arg(i));
+    }
+    for (std::size_t i = 0; i != lambda->get_bind_num(); i++) {
+        builder.append(lambda->get_bind(i)->get_name());
+    }
     auto ptr = std::make_unique<ClosureRecordFactory>(std::move(builder.build()));
     crf.swap(ptr);
 }
 
 void ClosureRecordDistributor::distribute() {
+    lambda->to_pass = std::make_unique<refs_seq_type>(*(crf->record));
     for (const auto child : children) {
         child->set_clsr_record(crf->produce());
     }
@@ -65,7 +73,7 @@ ExternRefsCollector::ExternRefsCollector(LambdaCPS* const lambda)
       lambda_cnt(-1)
 {
     ClosureRecordDistributor crd(root);
-    crd_map.emplace(root, std::move(crd));
+    crd_map.emplace(root, std::move(crd)).first;
 }
 
 void ExternRefsCollector::visit(LambdaCPS* const cps) {
@@ -92,8 +100,7 @@ void ExternRefsCollector::visit(LambdaCPS* const cps) {
     }
 
     for (std::size_t i = 0; i != cps->get_bind_num(); i++) {
-        const auto bind = cps->get_bind(i);
-        bind->get_value()->accept(*this);
+        cps->get_bind(i)->accept(*this);
     }
 
     cps->get_body()->accept(*this);
@@ -114,7 +121,7 @@ void ExternRefsCollector::visit(ApplyCPS* const cps) {
 }
 
 void ExternRefsCollector::visit(BindCPS* const cps) {
-    // maybe unused
+    cps->get_value()->accept(*this);
 }
 
 void ExternRefsCollector::visit(VarCPS* const cps) {
@@ -136,10 +143,16 @@ bool ExternRefsCollector::is_inner_var(const std::string &name) const noexcept {
 
 void ClosureTranslator::visit(LambdaCPS* const cps) {
     set_ext_refs(cps);
+
     distribute_clsr_record(cps);
+
+    if (!(cps->get_lex_scope())) {
+        cps->set_clsr_record(ClosureRecord::get_empty_clsr_record());
+    }
 
     const auto store = this->lex_scope;
     this->lex_scope = cps->get_lex_scope();
+    assert(this->lex_scope);
 
     for (std::size_t i = 0; i != cps->get_bind_num(); i++) {
         const auto bind = cps->get_bind(i);

@@ -103,6 +103,10 @@ const std::vector<std::string>& LambdaCPS::get_raw_ext_refs() const noexcept {
 const LexicalScope* LambdaCPS::get_lex_scope() const noexcept {
     return lex_scope.get();
 }
+    
+const refs_seq_type* LambdaCPS::get_passing_record() const noexcept {
+    return to_pass.get();
+}
 
 void LambdaCPS::set_clsr_record(const ClosureRecord clsr_record) noexcept {
     lex_scope = std::make_unique<LexicalScope>(&args, &locals, &ext_refs, clsr_record);
@@ -404,6 +408,8 @@ namespace internal {
 struct PrintCPS : public CPSVisitor {
     PrintCPS() = delete;
 
+    std::string record = "(cons* ())";
+
     PrintCPS(const std::string &filename)
         : ofs(filename)
     {
@@ -439,19 +445,30 @@ struct PrintCPS : public CPSVisitor {
             ofs << ")";
         };
 
-        if (!cps->get_lex_scope()) {
-            gen();
-            return;
-        }
+        std::string store;
+
+        auto make_record_to_pass = [&] {
+            const auto seq_ptr = cps->get_passing_record();
+            if (!seq_ptr) return;
+            store = record;
+            std::stringstream ss;
+            ss << "(cons*";
+            for (const auto &e : *seq_ptr) {
+                ss << ' '
+                   << var_ref2str(cps->get_lex_scope()->get_ref(e), e);
+            }
+            ss << " ())";
+            record = ss.str();
+        };
+
         const auto clsr_rcd = cps->get_lex_scope()->get_closure_record();
+        make_record_to_pass();
         ofs << "((lambda ("
             << clsr_rcd.get_name()
             << ") ";
         gen();
-        ofs << ") (cons*";
-        const auto raw_rcd = clsr_rcd.get_raw_record();
-        if (raw_rcd) for (const auto &e : *raw_rcd) ofs << ' ' << e;
-        ofs << " ()))";
+        record = store;
+        ofs << ") " << record << ")";
     }
 
     virtual void visit(const PrimitiveCPS* const cps) override {
@@ -489,6 +506,21 @@ struct PrintCPS : public CPSVisitor {
 
     virtual void visit(const ConstantCPS* const cps) override {
         ofs << cps->get_value();
+    }
+
+    std::string var_ref2str(const VarRef &ref, const std::string &name) {
+        std::stringstream ss;
+        assert(ref.type != RefTypeTag::Unknown);
+        if (ref.type == RefTypeTag::External) {
+            ss << "(list-ref " 
+               << ref.record_name.value()
+               << ' '
+               << ref.idx
+               << ')';
+        } else {
+            ss << name;
+        }
+        return ss.str();
     }
 
 private:

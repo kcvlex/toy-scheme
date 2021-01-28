@@ -1,6 +1,7 @@
 #include "lexical_scope.hpp"
 #include "util.hpp"
 #include <algorithm>
+#include <iostream>
 
 namespace compiler {
 
@@ -16,7 +17,7 @@ std::string get_clsr_record_name() {
 
 
 
-/******************** ClosureRecord ********************/
+/******************** VarRef ********************/
 
 VarRef::VarRef(const RefTypeTag type_arg,
                const std::size_t idx_arg,
@@ -67,6 +68,11 @@ ClosureRecord::const_raw_record_ptr_type ClosureRecord::get_raw_record() const {
     return record;
 }
 
+ClosureRecord ClosureRecord::get_empty_clsr_record() {
+    return ClosureRecord(std::move(get_clsr_record_name()),
+                         std::make_shared<refs_seq_type>());
+}
+
 
 /******************** ClosureRecordFactory ********************/
 
@@ -82,8 +88,15 @@ ClosureRecord ClosureRecordFactory::produce() const noexcept {
 
 /******************** ClosureRecordFactoryBuilder ********************/
 
-ClosureRecordFactoryBuilder& ClosureRecordFactoryBuilder::append(const refs_seq_type &refs) {
+ClosureRecordFactoryBuilder::ref_self_type
+ClosureRecordFactoryBuilder::append(const refs_seq_type &refs) {
     ext_refs_sum.insert(std::end(ext_refs_sum), std::cbegin(refs), std::cend(refs));
+    return *this;
+}
+
+ClosureRecordFactoryBuilder::ref_self_type
+ClosureRecordFactoryBuilder::append(const std::string &name) {
+    ext_refs_sum.push_back(name);
     return *this;
 }
 
@@ -121,7 +134,11 @@ VarRef LexicalScope::get_ref(const std::string &name) const noexcept {
 
     {
         const auto opt = clsr_record.get_idx_opt(name);
-        if (opt.has_value()) return VarRef(RefTypeTag::External, *opt);
+        if (opt.has_value()) return VarRef(RefTypeTag::External, *opt, clsr_record.get_name());
+    }
+
+    {
+        if (name == "ADD") return VarRef(RefTypeTag::Global, 0);  // FIXME
     }
 
     return VarRef(RefTypeTag::Unknown, 0);

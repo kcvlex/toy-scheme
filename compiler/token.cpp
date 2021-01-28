@@ -10,7 +10,6 @@ std::string surround(std::string s) {
     std::string res = "((lambda () \n";
     res += std::move(s);
     res += "))";
-    std::cout << res << std::endl;
     return res;
 }
 
@@ -77,7 +76,7 @@ TokenStream::token_iterator TokenStream::advance() {
 
 TokenStream& TokenStream::eat(const raw_token_type &token) {
     if (*cur != token) {
-        std::cout << *cur << ", " << token << std::endl;
+        std::cerr << *cur << ", " << token << std::endl;
         assert(false);
     }
     advance();

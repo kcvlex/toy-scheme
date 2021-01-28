@@ -14,7 +14,7 @@ compiler.a: ${DEPS} ${OBJECTS}
 	ar rcs $@  ${OBJECTS}
 
 clean:
-	rm -f compiler.a test-translate *o *d
+	rm -f compiler.a test_translate *o *d
 
 ifneq (${MAKECMDGOALS},clean)
 include ${DEPS}

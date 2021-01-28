@@ -7,6 +7,8 @@
 
 namespace compiler {
 
+namespace internal { struct ClosureRecordDistributor; }
+
 struct CPSVisitor;
 struct ModifyCPSVisitor;
 
@@ -90,6 +92,7 @@ struct LambdaCPS : public CPSNode {
     node_ptr get_body() noexcept;
     const std::vector<std::string>& get_raw_ext_refs() const noexcept;
     const LexicalScope* get_lex_scope() const noexcept;
+    const refs_seq_type* get_passing_record() const noexcept;
 
     void set_clsr_record(const ClosureRecord clsr_record) noexcept;
 
@@ -101,8 +104,10 @@ private:
     std::vector<bind_ptr> binds;
     node_ptr body;
     std::unique_ptr<LexicalScope> lex_scope;
+    std::unique_ptr<refs_seq_type> to_pass;
 
     friend void set_ext_refs(LambdaCPS* const);
+    friend struct compiler::internal::ClosureRecordDistributor;
 };
 
 struct VarCPS : public CPSNode {

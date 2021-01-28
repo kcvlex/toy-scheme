@@ -2,6 +2,7 @@
 #define INCLUDE_COMPILER_REGISTERS
 
 #include <cstdint>
+#include <sstream>
 
 namespace compiler {
 
@@ -46,7 +47,6 @@ constexpr PhysicalRegister rv_reg = PhysicalRegister::a0;
 
 static_assert(reg2int(PhysicalRegister::Size) == 32, "Invalid Number of PhysicalRegisteristers");
 
-
 struct VirtualRegister {
     enum class Type {
         StackPtr,
@@ -67,7 +67,9 @@ private:
                     const std::size_t id_arg);
 };
 
+std::ostream& operator<<(std::ostream &os, const PhysicalRegister val);
+std::ostream& operator<<(std::ostream &os, const VirtualRegister val);
 
-};
+}
 
 #endif

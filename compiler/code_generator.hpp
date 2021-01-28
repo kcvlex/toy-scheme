@@ -1,7 +1,6 @@
 #ifndef INCLUDE_COMPILER_CODE_GENRATOR
 #define INCLUDE_COMPILER_CODE_GENRATOR
 
-#if 0
 #include <unordered_map>
 #include <optional>
 #include "cps.hpp"
@@ -80,7 +79,5 @@ private:
 };
 
 }
-
-#endif
 
 #endif

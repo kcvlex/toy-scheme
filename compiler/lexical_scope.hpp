@@ -9,11 +9,16 @@
 
 namespace compiler {
 
+namespace internal { 
+struct ClosureRecordDistributor; 
+}
+
 enum class RefTypeTag {
     Unknown,
     Args,
     Local,
-    External
+    External,
+    Global,
 };
 
 using refs_seq_type = std::vector<std::string>;
@@ -42,6 +47,7 @@ struct ClosureRecord {
     index_opt_type get_idx_opt(const std::string &name) const noexcept;
     std::size_t size() const noexcept;
     const_raw_record_ptr_type get_raw_record() const;
+    static ClosureRecord get_empty_clsr_record();
 
 private:
     std::string name;
@@ -63,10 +69,13 @@ private:
     ClosureRecordFactory(refs_seq_type ext_refs);
 
     friend struct ClosureRecordFactoryBuilder;
+    friend struct compiler::internal::ClosureRecordDistributor;
 };
 
 struct ClosureRecordFactoryBuilder {
-    ClosureRecordFactoryBuilder& append(const refs_seq_type &ext_refs);
+    using ref_self_type = ClosureRecordFactoryBuilder&;
+    ref_self_type append(const refs_seq_type &ext_refs);
+    ref_self_type append(const std::string &name);
     ClosureRecordFactory build();
 
 private:

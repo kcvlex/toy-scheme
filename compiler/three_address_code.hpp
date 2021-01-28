@@ -65,8 +65,6 @@ struct ThreeAddressCode {
     void read(reg_type &r1, label_type &label) const;
     */
 
-    bool has_side_effect(const reg_type reg) const noexcept;
-
     // offset(base) <- src
     static ThreeAddressCode make_sw(const reg_type src,
                                     const reg_type base,
@@ -83,8 +81,9 @@ struct ThreeAddressCode {
     static ThreeAddressCode make_nop();
 };
 
+std::ostream& operator<<(std::ostream &os, const reg_type &val);
+std::ostream& operator<<(std::ostream &os, const Operand &val);
 std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val);
-
 
 struct CodeSequence : public std::vector<ThreeAddressCode> {
     using vector<ThreeAddressCode>::vector;
