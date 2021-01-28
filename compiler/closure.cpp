@@ -20,6 +20,7 @@ void add_child(LambdaCPS* const par,
 void distribute_clsr_record(LambdaCPS* const lambda) {
     auto ite = crd_map.find(lambda);
     assert(ite != std::end(crd_map));
+    ite->second.build_clsr_record_factory();
     ite->second.distribute();
 }
 
@@ -134,6 +135,7 @@ bool ExternRefsCollector::is_inner_var(const std::string &name) const noexcept {
 /******************** ClosureTranslator ********************/
 
 void ClosureTranslator::visit(LambdaCPS* const cps) {
+    set_ext_refs(cps);
     distribute_clsr_record(cps);
 
     const auto store = this->lex_scope;

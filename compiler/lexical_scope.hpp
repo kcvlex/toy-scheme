@@ -34,13 +34,14 @@ struct VarRef {
 
 struct ClosureRecord {
     using raw_record_ptr_type = std::shared_ptr<refs_seq_type>;
+    using const_raw_record_ptr_type = std::shared_ptr<const refs_seq_type>;
 
     ClosureRecord() = delete;
 
     const std::string& get_name() const noexcept;
     index_opt_type get_idx_opt(const std::string &name) const noexcept;
     std::size_t size() const noexcept;
-    const refs_seq_type& get_raw_record() const;
+    const_raw_record_ptr_type get_raw_record() const;
 
 private:
     std::string name;

@@ -439,13 +439,18 @@ struct PrintCPS : public CPSVisitor {
             ofs << ")";
         };
 
+        if (!cps->get_lex_scope()) {
+            gen();
+            return;
+        }
         const auto clsr_rcd = cps->get_lex_scope()->get_closure_record();
         ofs << "((lambda ("
             << clsr_rcd.get_name()
             << ") ";
         gen();
         ofs << ") (cons*";
-        for (const auto &e : clsr_rcd.get_raw_record()) ofs << ' ' << e;
+        const auto raw_rcd = clsr_rcd.get_raw_record();
+        if (raw_rcd) for (const auto &e : *raw_rcd) ofs << ' ' << e;
         ofs << " ()))";
     }
 

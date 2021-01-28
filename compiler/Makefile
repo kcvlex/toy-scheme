@@ -13,19 +13,6 @@ all: compiler.a
 compiler.a: ${DEPS} ${OBJECTS}
 	ar rcs $@  ${OBJECTS}
 
-define TEST_RULES =
-$(1): $(1).cpp $(1).d
-	$$(eval DEPS_HPP=$$(shell cat $(1).d | sed -e "s/^.*://g" | tr '\\' ' ' | tr ' ' '\n' | grep -E "*hpp"))
-	$$(eval TO_CPP=$$(shell echo $${DEPS_HPP} | tr ' ' '\n' | sed -e "s/\(.*\)\..*/\1.cpp/g"))
-	$$(eval DEPS_CPP=$$(filter $${SOURCES},$${TO_CPP}))
-	$$(eval DEPS_OBJ=$$(shell echo $${DEPS_CPP} | tr ' ' '\n' | sed -e "s/\(.*\)\..*/\1.o/g" | grep -v test | sort | uniq))
-	echo $${DEPS_OBJ}
-	for i in $${DEPS_OBJ}; do echo $$$${i}; make $$$${i}; done
-	$${CXX} $${CXX_FLAGS} $$< $${DEPS_OBJ} -o $$@
-endef
-
-$(eval $(call TEST_RULES,test_translate))
-
 clean:
 	rm -f compiler.a test-translate *o *d
 
@@ -36,5 +23,24 @@ endif
 %.d: %.cpp
 	${CC} -MM ${CXX_FLAGS} $< | sed -e "s/\(.*.o\):/\1 $@:/g" > $@
 
-%.o: %.d
+%.o: %.d %.cpp
 	${CXX} ${CXX_FLAGS} -c $(shell echo $< | sed -e "s/\(.*\).d/\1.cpp/g") -o $@
+
+define TEST_RULES =
+$(1).obj.d: $(1).cpp $(1).d 
+	$$(eval DEPS_HPP=$$(shell cat $(1).d | sed -e "s/^.*://g" | tr '\\' ' ' | tr ' ' '\n' | grep -E "*hpp"))
+	$$(eval TO_CPP=$$(shell echo $${DEPS_HPP} | tr ' ' '\n' | sed -e "s/\(.*\)\..*/\1.cpp/g"))
+	$$(eval DEPS_CPP=$$(filter $${SOURCES},$${TO_CPP}))
+	$$(eval DEPS_OBJ=$$(shell echo $${DEPS_CPP} | tr ' ' '\n' | sed -e "s/\(.*\)\..*/\1.o/g" | grep -v test | sort | uniq))
+	$$(eval TARGET_AND_DEPS=$$(shell echo $${DEPS_OBJ} | sed -e "s/^/$(1): /g"))
+	echo $${TARGET_AND_DEPS} > $$@
+
+ifneq ($${MAKECMDGOALS},clean)
+include $(1).obj.d
+endif
+
+$(1): $(1).cpp $(1).d $(1).obj.d
+	$${CXX} $${CXX_FLAGS} $$< $$(shell cat $(1).obj.d | sed -e "s/^.*: //g") -o $$@
+endef
+
+$(eval $(call TEST_RULES,test_translate))

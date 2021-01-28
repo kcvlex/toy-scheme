@@ -14,7 +14,8 @@ std::string read_file(const std::string &filename) {
 compiler::ASTNode* parse(const std::string &s) {
     compiler::TokenStream ts = std::move(compiler::Tokenizer::build(s));
     compiler::Parser parser(std::move(ts));
-    return parser.parse();
+    const auto res = parser.parse();
+    return res;
 }
 
 compiler::CPSNode* to_cps(const compiler::ASTNode* const root) {

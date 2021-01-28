@@ -63,8 +63,8 @@ std::size_t ClosureRecord::size() const noexcept {
     return record->size();
 }
 
-const refs_seq_type& ClosureRecord::get_raw_record() const {
-    return *record;
+ClosureRecord::const_raw_record_ptr_type ClosureRecord::get_raw_record() const {
+    return record;
 }
 
 
