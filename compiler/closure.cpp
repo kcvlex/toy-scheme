@@ -1,9 +1,86 @@
 #include "closure.hpp"
 #include <iostream>
+#include <unordered_map>
+#include <cassert>
+#include "util.hpp"
 
 namespace compiler {
 
-void CollectExternRefs::visit(LambdaCPS* const cps) {
+namespace {
+
+std::unordered_map<LambdaCPS*, internal::ClosureRecordDistributor> crd_map;
+
+void add_child(LambdaCPS* const par,
+               LambdaCPS* const child)
+{
+    auto ite = crd_map.find(par);
+    assert(ite != std::end(crd_map));
+    ite->second.add_child(child);
+}
+
+void distribute_clsr_record(LambdaCPS* const lambda) {
+    auto ite = crd_map.find(lambda);
+    assert(ite != std::end(crd_map));
+    ite->second.build_clsr_record_factory();
+    ite->second.distribute();
+}
+
+}  // anonymouse
+
+namespace internal {
+
+
+/******************** ClosureRecordDistributor ********************/
+
+ClosureRecordDistributor::ClosureRecordDistributor(LambdaCPS* const lambda_arg)
+    : lambda(lambda_arg),
+      crf(nullptr),
+      children()
+{
+}
+
+void ClosureRecordDistributor::add_child(LambdaCPS* const child) {
+    children.push_back(child);
+}
+
+void ClosureRecordDistributor::build_clsr_record_factory() {
+    ClosureRecordFactoryBuilder builder;
+    builder.append(lambda->get_raw_ext_refs());
+    for (std::size_t i = 0; i != lambda->get_arg_num(); i++) {
+        builder.append(lambda->get_arg(i));
+    }
+    for (std::size_t i = 0; i != lambda->get_bind_num(); i++) {
+        builder.append(lambda->get_bind(i)->get_name());
+    }
+    auto ptr = std::make_unique<ClosureRecordFactory>(std::move(builder.build()));
+    crf.swap(ptr);
+}
+
+void ClosureRecordDistributor::distribute() {
+    lambda->to_pass = std::make_unique<refs_seq_type>(*(crf->record));
+    for (const auto child : children) {
+        child->set_clsr_record(crf->produce());
+    }
+}
+
+
+/******************** ExternRefsCollector ********************/
+
+ExternRefsCollector::ExternRefsCollector(LambdaCPS* const lambda)
+    : inner(),
+      outer(),
+      root(lambda),
+      lambda_cnt(-1)
+{
+    ClosureRecordDistributor crd(root);
+    crd_map.emplace(root, std::move(crd)).first;
+}
+
+void ExternRefsCollector::visit(LambdaCPS* const cps) {
+    lambda_cnt++;
+
+    if (lambda_cnt == 1) add_child(root, cps);
+
     std::set<std::string> added;
 
     auto add_local_var = [&](const std::string &s) {
@@ -23,66 +100,59 @@ void CollectExternRefs::visit(LambdaCPS* const cps) {
     }
 
     for (std::size_t i = 0; i != cps->get_bind_num(); i++) {
-        const auto bind = cps->get_bind(i);
-        bind->get_value()->accept(*this);
+        cps->get_bind(i)->accept(*this);
     }
 
     cps->get_body()->accept(*this);
 
     for (const auto &e : added) inner.erase(e);
+
+    lambda_cnt--;
 }
 
-void CollectExternRefs::visit(PrimitiveCPS* const cps) {
+void ExternRefsCollector::visit(PrimitiveCPS* const cps) {
 }
 
-void CollectExternRefs::visit(ApplyCPS* const cps) {
+void ExternRefsCollector::visit(ApplyCPS* const cps) {
     cps->get_proc()->accept(*this);
     for (std::size_t i = 0; i != cps->get_arg_num(); i++) {
         cps->get_arg(i)->accept(*this);
     }
 }
 
-void CollectExternRefs::visit(BindCPS* const cps) {
-    // maybe unused
+void ExternRefsCollector::visit(BindCPS* const cps) {
+    cps->get_value()->accept(*this);
 }
 
-void CollectExternRefs::visit(VarCPS* const cps) {
+void ExternRefsCollector::visit(VarCPS* const cps) {
     decltype(auto) name = cps->get_var();
     if (is_inner_var(name)) return;
     outer.insert(name);
 }
 
-void CollectExternRefs::visit(ConstantCPS* const cps) {
+void ExternRefsCollector::visit(ConstantCPS* const cps) {
 }
 
-bool CollectExternRefs::is_inner_var(const std::string &name) const noexcept {
+bool ExternRefsCollector::is_inner_var(const std::string &name) const noexcept {
     auto ite = inner.find(name);
     return ite != inner.end();
 }
 
-void set_lex_scope(LambdaCPS* const lambda) {
-    CollectExternRefs cer;
-    lambda->accept(cer);
 
-    std::vector<std::string> args, locals;
-    for (std::size_t i = 0; i != lambda->get_arg_num(); i++) {
-        args.push_back(lambda->get_arg(i));
-    }
-    for (std::size_t i = 0; i != lambda->get_bind_num(); i++) {
-        locals.push_back(lambda->get_bind(i)->get_name());
-    }
+/******************** ClosureTranslator ********************/
 
-    auto ext_refs = std::make_shared<ExternRefs>(cer.outer);
-    lambda->lex_scope = std::make_shared<LexicalScope>(std::move(args),
-                                                       std::move(locals),
-                                                       ext_refs);
-}
-   
 void ClosureTranslator::visit(LambdaCPS* const cps) {
-    set_lex_scope(cps);
+    set_ext_refs(cps);
+
+    distribute_clsr_record(cps);
+
+    if (!(cps->get_lex_scope())) {
+        cps->set_clsr_record(ClosureRecord::get_empty_clsr_record());
+    }
 
     const auto store = this->lex_scope;
-    this->lex_scope = cps->lex_scope;
+    this->lex_scope = cps->get_lex_scope();
+    assert(this->lex_scope);
 
     for (std::size_t i = 0; i != cps->get_bind_num(); i++) {
         const auto bind = cps->get_bind(i);
@@ -115,9 +185,20 @@ void ClosureTranslator::visit(PrimitiveCPS* const cps) {
 void ClosureTranslator::visit(ConstantCPS* const cps) {
 }
 
+}  // internal
+
+
+void set_ext_refs(LambdaCPS* const lambda) {
+    internal::ExternRefsCollector erc(lambda);
+    lambda->accept(erc);
+    auto &v = lambda->ext_refs;
+    v.insert(std::end(v), std::begin(erc.outer), std::end(erc.outer));
+}
+
 void closure_translation(CPSNode* const root) {
-    ClosureTranslator ct;
+    internal::ClosureTranslator ct;
     root->accept(ct);
 }
 
-}
+
+}  // compiler

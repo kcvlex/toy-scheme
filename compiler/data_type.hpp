@@ -42,6 +42,7 @@ struct IntData {
     IntData(const data_type dat_arg);
 };
 
+/*
 struct ConsData {
     data_type car, cdr;
 
@@ -50,6 +51,7 @@ struct ConsData {
              const data_type cdr_arg);
     ~ConsData();
 };
+*/
 
 struct NilData {
 };

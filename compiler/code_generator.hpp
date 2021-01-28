@@ -19,7 +19,7 @@ struct RegisterMapping {
     vreg_opt_type get_reg(const std::string &name) const;
 
 private:
-    std::unordered_map<std::string, VritualRegister> map;
+    std::unordered_map<std::string, VirtualRegister> map;
     std::size_t reg_counter;
 };
  

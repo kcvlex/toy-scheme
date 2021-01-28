@@ -7,16 +7,20 @@ namespace compiler {
 
 /******************** Operand ********************/
 
-Operand reg2operand(const Reg reg) {
-    return Operand(std::in_place_index<0>, reg);
+Operand preg2operand(const PhysicalRegister preg) {
+    return Operand(reg_type(preg));
+}
+
+Operand vreg2operand(const VritualRegister vreg) {
+    return Operand(reg_type(vreg));
 }
 
 Operand imm2operand(const imm_value_type imm) {
-    return Operand(std::in_place_index<1>, imm);
+    return Operand(imm);
 }
 
 Operand label2operand(const label_type label) {
-    return Operand(std::in_place_index<2>, label);
+    return Operand(label);
 }
 
 
@@ -53,6 +57,7 @@ ThreeAddressCode::ThreeAddressCode(const Instructions instr,
 {
 }
 
+/*
 void ThreeAddressCode::read(Reg &r1, Reg &r2, Reg &r3) const {
     r1 = std::get<Reg>(op1.value());
     r2 = std::get<Reg>(op2.value());
@@ -75,44 +80,40 @@ void ThreeAddressCode::read(Reg &r1, label_type &label) const {
     r1 = std::get<Reg>(op1.value());
     label = std::get<label_type>(op2.value());
 }
+*/
 
-bool ThreeAddressCode::has_side_effect(const Reg reg) const noexcept {
-    for (auto op : { &op1, &op2, &op3 }) {
-        if (!op->has_value()) continue;
-        if (auto p = std::get_if<Reg>(&**op)) {
-            if (*p == reg) return true;
-        }
-    }
-    return false;
+std::ostream& operator<<(std::ostream &os, const reg_type &val) {
+    return std::visit([&](const auto &v) { return (os << v); }, 
+                      val);
+}
+
+std::ostream& operator<<(std::ostream &os, const Operand &val) {
+    return std::visit([&](const auto &v) { return (os << v); },
+                      val);
 }
 
 std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val) {
     os << util::to_str(val.instr);
     std::string elim = "\t";
     
-    if (val.instr == Instructions::SW || val.instr == Instructions::LW) {
-        auto v1 = std::get<0>(val.op1.value());
-        auto v2 = std::get<0>(val.op2.value());
-        auto v3 = std::get<1>(val.op3.value());
-        if (val.instr == Instructions::SW) {
-            os << elim << util::to_str(v2) << "," << v3 << "(" << util::to_str(v1) << ")";
-        } else {
-            os << elim << util::to_str(v1) << "," << v3 << "(" << util::to_str(v2) << ")";
-        }
-        return os;
+    if (val.instr == Instructions::SW) {
+        return (os << elim 
+                   << val.op2.value() << ","
+                   << val.op3.value() << "("
+                   << val.op1.value() << ")");
     }
-    
-    for (auto op : { val.op1, val.op2, val.op3 }) {
+
+    if (val.instr == Instructions::LW) {
+        return (os << elim
+                   << val.op1.value() << ","
+                   << val.op3.value() << "("
+                   << val.op2.value() << ")");
+    }
+
+    for (const auto &op : { val.op1, val.op2, val.op3 }) {
         if (!op.has_value()) break;
-        os << std::exchange(elim, ",");
-        auto value = op.value();
-        if (auto p = std::get_if<0>(&value)) {
-            os << util::to_str(*p);
-        } else if (auto p = std::get_if<1>(&value)) {
-            os << int(*p);
-        } else if (auto p = std::get_if<2>(&value)) {
-            os << "LL" << *p << ":";
-        }
+        os << std::exchange(elim, ",")
+           << op.value();
     }
     return os;
 }

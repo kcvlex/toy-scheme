@@ -1,5 +1,6 @@
 #include "code_generator.hpp"
 
+#if 0
 namespace compiler {
 
 
@@ -53,3 +54,5 @@ void FunctionCodeGenerator::build_env() {
 }
 
 }
+
+#endif

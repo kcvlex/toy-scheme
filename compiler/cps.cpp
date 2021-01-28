@@ -37,19 +37,22 @@ CPSNode::~CPSNode() {
 LambdaCPS::LambdaCPS(std::vector<std::string> args_arg,
                      std::vector<bind_ptr> binds_arg,
                      node_ptr body_arg)
-    : ext_refs(nullptr),
-      ex_scope(nullptr),
-      args(std::move(args_arg)),
+    : args(std::move(args_arg)),
+      locals(binds_arg.size()),
+      ext_refs(),
       binds(std::move(binds_arg)),
-      body(body_arg)
+      body(body_arg),
+      lex_scope(nullptr)
 {
+    for (std::size_t i = 0; i != binds.size(); i++) {
+        locals[i] = binds[i]->get_name();
+    }
 }
 
 LambdaCPS::LambdaCPS(std::vector<std::string> args_arg, 
                      node_ptr body_arg)
     : LambdaCPS(std::move(args_arg), { }, body_arg)
 {
-    if (ext_refs) delete ext_refs;
 }
 
 LambdaCPS::~LambdaCPS() {
@@ -61,20 +64,52 @@ const std::string& LambdaCPS::get_arg(const std::size_t i) const {
     return args[i];
 }
 
-std::size_t LambdaCPS::get_arg_num() const noexcept {
-    return args.size();
-}
-
 LambdaCPS::const_bind_ptr LambdaCPS::get_bind(const std::size_t i) const {
     return binds[i];
+}
+
+LambdaCPS::bind_ptr LambdaCPS::get_bind(const std::size_t i) {
+    return binds[i];
+}
+
+const std::string& LambdaCPS::get_ext_ref(const std::size_t i) const {
+    return ext_refs[i];
+}
+
+std::size_t LambdaCPS::get_arg_num() const noexcept {
+    return args.size();
 }
 
 std::size_t LambdaCPS::get_bind_num() const noexcept {
     return binds.size();
 }
 
+std::size_t LambdaCPS::get_ext_ref_num() const noexcept {
+    return ext_refs.size();
+}
+
 CPSNode::const_node_ptr LambdaCPS::get_body() const noexcept {
     return body;
+}
+
+CPSNode::node_ptr LambdaCPS::get_body() noexcept {
+    return body;
+}
+
+const std::vector<std::string>& LambdaCPS::get_raw_ext_refs() const noexcept {
+    return ext_refs;
+}
+
+const LexicalScope* LambdaCPS::get_lex_scope() const noexcept {
+    return lex_scope.get();
+}
+    
+const refs_seq_type* LambdaCPS::get_passing_record() const noexcept {
+    return to_pass.get();
+}
+
+void LambdaCPS::set_clsr_record(const ClosureRecord clsr_record) noexcept {
+    lex_scope = std::make_unique<LexicalScope>(&args, &locals, &ext_refs, clsr_record);
 }
 
 
@@ -168,9 +203,8 @@ CPSNode::const_node_ptr BindCPS::get_value() const noexcept {
 /******************** Var CPS ********************/
 
 VarCPS::VarCPS(std::string var_arg)
-    : var(std::move(var_arg)),
-      rtype(RefTypeTag::Unknown),
-      idx()
+    : ref(),
+      var(std::move(var_arg))
 {
 }
 
@@ -374,6 +408,8 @@ namespace internal {
 struct PrintCPS : public CPSVisitor {
     PrintCPS() = delete;
 
+    std::string record = "(cons* ())";
+
     PrintCPS(const std::string &filename)
         : ofs(filename)
     {
@@ -409,17 +445,30 @@ struct PrintCPS : public CPSVisitor {
             ofs << ")";
         };
 
-        if (cps->ext_refs) {
-            ofs << "((lambda ("
-                << cps->ext_refs->get_name()
-                << ") ";
-            gen();
-            ofs << ") (cons*";
-            for (const auto &e : cps->ext_refs->get_refs()) ofs << ' ' << e;
-            ofs << " ()))";
-        } else {
-            gen();
-        }
+        std::string store;
+
+        auto make_record_to_pass = [&] {
+            const auto seq_ptr = cps->get_passing_record();
+            if (!seq_ptr) return;
+            store = record;
+            std::stringstream ss;
+            ss << "(cons*";
+            for (const auto &e : *seq_ptr) {
+                ss << ' '
+                   << var_ref2str(cps->get_lex_scope()->get_ref(e), e);
+            }
+            ss << " ())";
+            record = ss.str();
+        };
+
+        const auto clsr_rcd = cps->get_lex_scope()->get_closure_record();
+        make_record_to_pass();
+        ofs << "((lambda ("
+            << clsr_rcd.get_name()
+            << ") ";
+        gen();
+        record = store;
+        ofs << ") " << record << ")";
     }
 
     virtual void visit(const PrimitiveCPS* const cps) override {
@@ -443,19 +492,35 @@ struct PrintCPS : public CPSVisitor {
     }
 
     virtual void visit(const VarCPS* const cps) override {
-        if (!cps->ext_refs_flag) {
-            ofs << cps->get_var();
-        } else {
+        const auto ref = cps->ref;
+        if (ref.type == RefTypeTag::External) {
             ofs << "(list-ref " 
-                << cps->get_ext_refs()->get_name()
+                << ref.record_name.value()
                 << ' '
-                << cps->get_ext_refs_idx()
+                << ref.idx
                 << ')';
+        } else {
+            ofs << cps->get_var();
         }
     }
 
     virtual void visit(const ConstantCPS* const cps) override {
         ofs << cps->get_value();
+    }
+
+    std::string var_ref2str(const VarRef &ref, const std::string &name) {
+        std::stringstream ss;
+        assert(ref.type != RefTypeTag::Unknown);
+        if (ref.type == RefTypeTag::External) {
+            ss << "(list-ref " 
+               << ref.record_name.value()
+               << ' '
+               << ref.idx
+               << ')';
+        } else {
+            ss << name;
+        }
+        return ss.str();
     }
 
 private:

@@ -7,6 +7,8 @@
 
 namespace compiler {
 
+namespace internal { struct ClosureRecordDistributor; }
+
 struct CPSVisitor;
 struct ModifyCPSVisitor;
 
@@ -68,10 +70,6 @@ private:
 struct LambdaCPS : public CPSNode {
     using bind_ptr = BindCPS*;
     using const_bind_ptr = const BindCPS*;
-    using lex_scope_ptr_type = std::shared_ptr<LexicalScope>;
-    using ext_refs_ptr_type = std::shared_ptr<ExternRefs>;
-
-    lex_scope_ptr_type cur_scope, pre_scope;
 
     LambdaCPS(std::vector<std::string> args_arg,
               std::vector<bind_ptr> binds_arg,
@@ -80,22 +78,40 @@ struct LambdaCPS : public CPSNode {
               node_ptr body_arg);
 
     virtual ~LambdaCPS() override;
+    
     const std::string& get_arg(const std::size_t i) const;
     const_bind_ptr get_bind(const std::size_t i) const;
-    const_node_ptr get_body() const noexcept;
+    bind_ptr get_bind(const std::size_t i);
+    const std::string& get_ext_ref(const std::size_t i) const;
+    
     std::size_t get_arg_num() const noexcept;
     std::size_t get_bind_num() const noexcept;
+    std::size_t get_ext_ref_num() const noexcept;
+
+    const_node_ptr get_body() const noexcept;
+    node_ptr get_body() noexcept;
+    const std::vector<std::string>& get_raw_ext_refs() const noexcept;
+    const LexicalScope* get_lex_scope() const noexcept;
+    const refs_seq_type* get_passing_record() const noexcept;
+
+    void set_clsr_record(const ClosureRecord clsr_record) noexcept;
+
     virtual void accept(CPSVisitor &visitor) const override;
     virtual void accept(ModifyCPSVisitor &visitor) override;
 
 private:
-    std::vector<std::string> args;
+    refs_seq_type args, locals, ext_refs;
     std::vector<bind_ptr> binds;
     node_ptr body;
+    std::unique_ptr<LexicalScope> lex_scope;
+    std::unique_ptr<refs_seq_type> to_pass;
+
+    friend void set_ext_refs(LambdaCPS* const);
+    friend struct compiler::internal::ClosureRecordDistributor;
 };
 
 struct VarCPS : public CPSNode {
-    ref_type ref;
+    VarRef ref;
     
     VarCPS(std::string var_arg);
     virtual ~VarCPS();

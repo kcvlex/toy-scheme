@@ -15,7 +15,7 @@ namespace compiler {
 
 using imm_value_type = std::int16_t;
 using label_type = std::string;  // FIXME
-using reg_type = std::variant<PhysicalRegister, VirtualRegister> 
+using reg_type = std::variant<PhysicalRegister, VirtualRegister>;
 using Operand = std::variant<reg_type, 
                              imm_value_type, 
                              label_type>;
@@ -65,8 +65,6 @@ struct ThreeAddressCode {
     void read(reg_type &r1, label_type &label) const;
     */
 
-    bool has_side_effect(const reg_type reg) const noexcept;
-
     // offset(base) <- src
     static ThreeAddressCode make_sw(const reg_type src,
                                     const reg_type base,
@@ -83,8 +81,9 @@ struct ThreeAddressCode {
     static ThreeAddressCode make_nop();
 };
 
+std::ostream& operator<<(std::ostream &os, const reg_type &val);
+std::ostream& operator<<(std::ostream &os, const Operand &val);
 std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val);
-
 
 struct CodeSequence : public std::vector<ThreeAddressCode> {
     using vector<ThreeAddressCode>::vector;
