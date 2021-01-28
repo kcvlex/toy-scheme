@@ -47,7 +47,7 @@ constexpr PhysicalRegister rv_reg = PhysicalRegister::a0;
 static_assert(reg2int(PhysicalRegister::Size) == 32, "Invalid Number of PhysicalRegisteristers");
 
 
-struct VritualRegister {
+struct VirtualRegister {
     enum class Type {
         StackPtr,
         BasePtr,

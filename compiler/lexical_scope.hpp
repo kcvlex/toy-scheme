@@ -9,23 +9,6 @@
 
 namespace compiler {
 
-struct ExternRefs {
-
-    ExternRefs(std::vector<std::string> refs_arg);
-    ExternRefs(const std::set<std::string> &set);
-
-    const std::string& get_name() const noexcept;
-    index_opt_type get_idx(const std::string &var) const noexcept;
-    const std::vector<std::string>& get_refs() const noexcept;
-    std::size_t size() const noexcept;
-
-private:
-    std::vector<std::string> refs;
-    std::string name;
-
-    void init_refs();
-};
-    
 enum class RefTypeTag {
     Unknown,
     Args,
@@ -33,19 +16,74 @@ enum class RefTypeTag {
     External
 };
 
-using ref_type = std::pair<RefTypeTag, std::size_t>;
+using refs_seq_type = std::vector<std::string>;
+using refs_seq_ptr_type = refs_seq_type*;
 
-struct LexicalScope {
-    LexicalScope(std::vector<std::string> args_arg,
-                 std::vector<std::string> locals_arg,
-                 std::shared_ptr<ExtenRefs> ext_refs_arg);
+struct VarRef {
+    RefTypeTag type;
+    std::size_t idx;
+    std::optional<std::string> record_name;
 
-    ref_type get_ref(const std::string &name) const noexcept;
-    const ExternRefs* get_ext_refs() const noexcept;
+    VarRef(const RefTypeTag type_arg,
+           const std::size_t idx_arg,
+           std::optional<std::string> record_name_arg);
+    VarRef(const RefTypeTag type_arg,
+           const std::size_t idx_arg);
+    VarRef();
+};
+
+struct ClosureRecord {
+    using raw_record_ptr_type = std::shared_ptr<refs_seq_type>;
+
+    ClosureRecord() = delete;
+
+    const std::string& get_name() const noexcept;
+    index_opt_type get_idx_opt(const std::string &name) const noexcept;
+    std::size_t size() const noexcept;
+    const refs_seq_type& get_raw_record() const;
 
 private:
-    std::vector<std::string> args, locals;
-    std::shared_ptr<ExternRefs> ext_refs;
+    std::string name;
+    raw_record_ptr_type record;
+
+    ClosureRecord(std::string name_arg,
+                  const raw_record_ptr_type record_arg);
+
+    friend struct ClosureRecordFactory;
+};
+
+struct ClosureRecordFactory {
+    ClosureRecordFactory() = delete;
+    ClosureRecord produce() const noexcept;
+
+private:
+    ClosureRecord::raw_record_ptr_type record;
+
+    ClosureRecordFactory(refs_seq_type ext_refs);
+
+    friend struct ClosureRecordFactoryBuilder;
+};
+
+struct ClosureRecordFactoryBuilder {
+    ClosureRecordFactoryBuilder& append(const refs_seq_type &ext_refs);
+    ClosureRecordFactory build();
+
+private:
+    refs_seq_type ext_refs_sum;
+};
+    
+struct LexicalScope {
+    LexicalScope(const refs_seq_ptr_type args_arg,
+                 const refs_seq_ptr_type locals_arg,
+                 const refs_seq_ptr_type ext_refs_arg,
+                 const ClosureRecord clsr_record_arg);
+
+    VarRef get_ref(const std::string &name) const noexcept;
+    const ClosureRecord& get_closure_record() const noexcept;
+
+private:
+    refs_seq_ptr_type args, locals, ext_refs;
+    ClosureRecord clsr_record;
 };
 
 }

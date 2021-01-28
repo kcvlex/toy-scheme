@@ -12,6 +12,7 @@ IntData::IntData(const data_type dat_arg)
 
 /******************** ConsData ********************/
 
+/*
 ConsData::ConsData(const record_data_type car_arg,
                    const record_data_type cdr_arg)
     : car(car_arg),
@@ -26,6 +27,7 @@ ConsData::~ConsData() {
     std::visit(free, car);
     std::visit(free, cdr);
 }
+*/
 
 
 /******************** NilData ********************/

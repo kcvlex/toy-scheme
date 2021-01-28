@@ -1,6 +1,7 @@
 #ifndef INCLUDE_COMPILER_CODE_GENRATOR
 #define INCLUDE_COMPILER_CODE_GENRATOR
 
+#if 0
 #include <unordered_map>
 #include <optional>
 #include "cps.hpp"
@@ -19,7 +20,7 @@ struct RegisterMapping {
     vreg_opt_type get_reg(const std::string &name) const;
 
 private:
-    std::unordered_map<std::string, VritualRegister> map;
+    std::unordered_map<std::string, VirtualRegister> map;
     std::size_t reg_counter;
 };
  
@@ -79,5 +80,7 @@ private:
 };
 
 }
+
+#endif
 
 #endif

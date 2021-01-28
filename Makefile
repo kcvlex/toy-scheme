@@ -3,7 +3,7 @@ ROOT_DIR = $(shell pwd)
 COMPILER_DIR = ${ROOT_DIR}/compiler
 ASSEMBLER_DIR = ${ROOT_DIR}/assembler
 UTIL_DIR = ${ROOT_DIR}/util
-CXX_FLAGS = -Wall -g -std=c++17 -I${ROOT_DIR}
+CXX_FLAGS = -Wall -g -std=c++17 -I${ROOT_DIR} -fdiagnostics-color
 HEADERS = $(shell ls ${COMPILER_DIR}/*.hpp ${ASSEMBLER_DIR}/*hpp ${UTIL_DIR}/*hpp)
 
 all: 
