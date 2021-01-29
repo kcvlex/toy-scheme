@@ -17,25 +17,25 @@ std::string get_clsr_record_name() {
 
 
 
-/******************** VarRef ********************/
+/******************** VarLocation ********************/
 
-VarRef::VarRef(const RefTypeTag type_arg,
-               const std::size_t idx_arg,
-               std::optional<std::string> record_name_arg)
+VarLocation::VarLocation(const RefTypeTag type_arg,
+                         const std::size_t idx_arg,
+                         std::optional<std::string> record_name_arg)
     : type(type_arg),
       idx(idx_arg),
       record_name(std::move(record_name_arg))
 {
 }
 
-VarRef::VarRef(const RefTypeTag type_arg,
-               const std::size_t idx_arg)
-    : VarRef(type_arg, idx_arg, std::nullopt)
+VarLocation::VarLocation(const RefTypeTag type_arg,
+                         const std::size_t idx_arg)
+    : VarLocation(type_arg, idx_arg, std::nullopt)
 {
 }
 
-VarRef::VarRef()
-    : VarRef(RefTypeTag::Unknown, 0, std::nullopt)
+VarLocation::VarLocation()
+    : VarLocation(RefTypeTag::Unknown, 0, std::nullopt)
 {
 }
 
@@ -85,6 +85,11 @@ ClosureRecord ClosureRecordFactory::produce() const noexcept {
     return ClosureRecord(std::move(get_clsr_record_name()), record);
 }
 
+ClosureRecord::const_raw_record_ptr_type
+ClosureRecordFactory::get_raw_record() const noexcept {
+    return record;
+}
+
 
 /******************** ClosureRecordFactoryBuilder ********************/
 
@@ -121,27 +126,27 @@ LexicalScope::LexicalScope(const refs_seq_ptr_type args_arg,
 {
 }
 
-VarRef LexicalScope::get_ref(const std::string &name) const noexcept {
+VarLocation LexicalScope::get_ref(const std::string &name) const noexcept {
     {
         const auto opt = get_idx_aux(*locals, name);
-        if (opt.has_value()) return VarRef(RefTypeTag::Local, *opt);
+        if (opt.has_value()) return VarLocation(RefTypeTag::Local, *opt);
     }
 
     {
         const auto opt = get_idx_aux(*args, name);
-        if (opt.has_value()) return VarRef(RefTypeTag::Args, *opt);
+        if (opt.has_value()) return VarLocation(RefTypeTag::Args, *opt);
     }
 
     {
         const auto opt = clsr_record.get_idx_opt(name);
-        if (opt.has_value()) return VarRef(RefTypeTag::External, *opt, clsr_record.get_name());
+        if (opt.has_value()) return VarLocation(RefTypeTag::External, *opt, clsr_record.get_name());
     }
 
     {
-        if (name == "ADD") return VarRef(RefTypeTag::Global, 0);  // FIXME
+        if (name == "ADD") return VarLocation(RefTypeTag::Global, 0);  // FIXME
     }
 
-    return VarRef(RefTypeTag::Unknown, 0);
+    return VarLocation(RefTypeTag::Unknown, 0);
 }
 
 const ClosureRecord& LexicalScope::get_closure_record() const noexcept {

@@ -7,7 +7,12 @@
 
 namespace compiler {
 
-namespace internal { struct ClosureRecordDistributor; }
+namespace internal {
+
+struct DependencyAnalyzer;
+struct ClosureRecordSetter; 
+
+}
 
 struct CPSVisitor;
 struct ModifyCPSVisitor;
@@ -47,6 +52,16 @@ struct ApplyCPS : public CPSNode {
     std::size_t get_arg_num() const noexcept;
     virtual void accept(CPSVisitor &visitor) const override;
     virtual void accept(ModifyCPSVisitor &visitor) override;
+
+    template <typename F>
+    void for_each_args(F f) {
+        for (std::size_t i = 0; i != args.size(); i++) f(args[i], i);
+    }
+    
+    template <typename F>
+    void for_each_args(F f) const {
+        for (std::size_t i = 0; i != args.size(); i++) f(args[i], i);
+    }
 
 private:
     node_ptr proc;
@@ -99,6 +114,26 @@ struct LambdaCPS : public CPSNode {
     virtual void accept(CPSVisitor &visitor) const override;
     virtual void accept(ModifyCPSVisitor &visitor) override;
 
+    template <typename F>
+    void for_each_args(F f) {
+        for (std::size_t i = 0; i != args.size(); i++) f(args[i], i);
+    }
+
+    template <typename F>
+    void for_each_args(F f) const {
+        for (std::size_t i = 0; i != args.size(); i++) f(args[i], i);
+    }
+
+    template <typename F>
+    void for_each_binds(F f) {
+        for (std::size_t i = 0; i != binds.size(); i++) f(binds[i], i);
+    }
+
+    template <typename F>
+    void for_each_binds(F f) const {
+        for (std::size_t i = 0; i != binds.size(); i++) f(binds[i], i);
+    }
+
 private:
     refs_seq_type args, locals, ext_refs;
     std::vector<bind_ptr> binds;
@@ -106,12 +141,12 @@ private:
     std::unique_ptr<LexicalScope> lex_scope;
     std::unique_ptr<refs_seq_type> to_pass;
 
-    friend void set_ext_refs(LambdaCPS* const);
-    friend struct compiler::internal::ClosureRecordDistributor;
+    friend struct compiler::internal::DependencyAnalyzer;
+    friend struct compiler::internal::ClosureRecordSetter;
 };
 
 struct VarCPS : public CPSNode {
-    VarRef ref;
+    VarLocation ref;
     
     VarCPS(std::string var_arg);
     virtual ~VarCPS();

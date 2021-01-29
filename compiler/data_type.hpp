@@ -4,11 +4,10 @@
 #include <variant>
 #include <vector>
 #include <cstdint>
+#include "alias.hpp"
 #include "three_address_code.hpp"
 
 namespace compiler {
-
-using addr_type = std::uint32_t;
 
 struct IntData;
 struct ConsData;

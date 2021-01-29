@@ -9,12 +9,11 @@
 #include <variant>
 #include <array>
 #include <sstream>
+#include "alias.hpp"
 #include "registers.hpp"
 
 namespace compiler {
 
-using imm_value_type = std::int16_t;
-using label_type = std::string;  // FIXME
 using reg_type = std::variant<PhysicalRegister, VirtualRegister>;
 using Operand = std::variant<reg_type, 
                              imm_value_type, 

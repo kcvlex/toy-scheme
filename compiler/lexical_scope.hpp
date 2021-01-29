@@ -6,12 +6,9 @@
 #include <string>
 #include <memory>
 #include "util.hpp"
+#include "alias.hpp"
 
 namespace compiler {
-
-namespace internal { 
-struct ClosureRecordDistributor; 
-}
 
 enum class RefTypeTag {
     Unknown,
@@ -21,20 +18,17 @@ enum class RefTypeTag {
     Global,
 };
 
-using refs_seq_type = std::vector<std::string>;
-using refs_seq_ptr_type = refs_seq_type*;
-
-struct VarRef {
+struct VarLocation {
     RefTypeTag type;
     std::size_t idx;
     std::optional<std::string> record_name;
 
-    VarRef(const RefTypeTag type_arg,
-           const std::size_t idx_arg,
-           std::optional<std::string> record_name_arg);
-    VarRef(const RefTypeTag type_arg,
-           const std::size_t idx_arg);
-    VarRef();
+    VarLocation(const RefTypeTag type_arg,
+                const std::size_t idx_arg,
+                std::optional<std::string> record_name_arg);
+    VarLocation(const RefTypeTag type_arg,
+                const std::size_t idx_arg);
+    VarLocation();
 };
 
 struct ClosureRecord {
@@ -61,7 +55,9 @@ private:
 
 struct ClosureRecordFactory {
     ClosureRecordFactory() = delete;
+
     ClosureRecord produce() const noexcept;
+    ClosureRecord::const_raw_record_ptr_type get_raw_record() const noexcept;
 
 private:
     ClosureRecord::raw_record_ptr_type record;
@@ -69,7 +65,6 @@ private:
     ClosureRecordFactory(refs_seq_type ext_refs);
 
     friend struct ClosureRecordFactoryBuilder;
-    friend struct compiler::internal::ClosureRecordDistributor;
 };
 
 struct ClosureRecordFactoryBuilder {
@@ -88,7 +83,7 @@ struct LexicalScope {
                  const refs_seq_ptr_type ext_refs_arg,
                  const ClosureRecord clsr_record_arg);
 
-    VarRef get_ref(const std::string &name) const noexcept;
+    VarLocation get_ref(const std::string &name) const noexcept;
     const ClosureRecord& get_closure_record() const noexcept;
 
 private:

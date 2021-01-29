@@ -42,11 +42,14 @@ LambdaCPS::LambdaCPS(std::vector<std::string> args_arg,
       ext_refs(),
       binds(std::move(binds_arg)),
       body(body_arg),
-      lex_scope(nullptr)
+      lex_scope(nullptr),
+      to_pass(nullptr)
 {
     for (std::size_t i = 0; i != binds.size(); i++) {
         locals[i] = binds[i]->get_name();
     }
+
+    set_clsr_record(ClosureRecord::get_empty_clsr_record());
 }
 
 LambdaCPS::LambdaCPS(std::vector<std::string> args_arg, 
@@ -508,7 +511,7 @@ struct PrintCPS : public CPSVisitor {
         ofs << cps->get_value();
     }
 
-    std::string var_ref2str(const VarRef &ref, const std::string &name) {
+    std::string var_ref2str(const VarLocation &ref, const std::string &name) {
         std::stringstream ss;
         assert(ref.type != RefTypeTag::Unknown);
         if (ref.type == RefTypeTag::External) {
