@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <bitset>
 
-namespace assembler {
+namespace util {
 
 struct BitOperation {
     using value_type = std::bitset<64>;
@@ -16,7 +16,7 @@ struct BitOperation {
     // return val[r:l] (like verilog HDL)
     BitOperation operator()(const std::uint8_t r, const std::uint8_t l) const;
     
-    // arithmetic right bit shift
+    // logical right bit shift
     BitOperation& operator>>=(const std::uint8_t w) noexcept;
     BitOperation& operator<<=(const std::uint8_t w) noexcept;
     BitOperation& operator&=(const BitOperation &rhs) noexcept;

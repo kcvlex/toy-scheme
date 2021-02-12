@@ -1,7 +1,7 @@
 #include "bit_operation.hpp"
 #include <cassert>
 
-namespace assembler {
+namespace util {
 
 BitOperation::BitOperation() noexcept : BitOperation(0) 
 {
