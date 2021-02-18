@@ -6,9 +6,18 @@ namespace compiler {
 
 namespace {
 
-std::string get_cont_label() {
+std::string gen_cont_label() {
     static int cnt = 0;
     return std::string("k") + std::to_string(cnt++);
+}
+
+std::string gen_local_var() {
+    static int cnt = 0;
+    return std::string("loc_var") + std::to_string(cnt++);
+}
+
+LambdaCPS* gen_extract() {
+    return new LambdaCPS({ "x" }, new VarCPS("x"));
 }
 
 }  // anonymouse
@@ -178,12 +187,12 @@ std::size_t ApplyCPS::get_arg_num() const noexcept {
 
 /******************** Bind CPS ********************/
 
+// Extract value
 BindCPS::BindCPS(std::string name_arg, node_ptr value_arg)
     : name(std::move(name_arg)),
       value(value_arg)
 {
-    auto extract_value = new LambdaCPS({ "x" }, new VarCPS("x"));
-    value = new ApplyCPS(value, { extract_value });
+    value = new ApplyCPS(value, { gen_extract() });
 }
 
 BindCPS::~BindCPS() {
@@ -236,61 +245,59 @@ std::int32_t ConstantCPS::get_value() const noexcept {
 
 /******************** CPS transformation ********************/
 
-// (f a_1 a_2 ... a_n)
+/* SRC : 
+ *  (f a_1 a_2 ... a_n)
+ *
+ * DST :
+ *  (lambda (k)
+ *     (define v_1 ...)
+ *     .
+ *     .
+ *     .
+ *     (define v_n ...)
+ *     (F[[f]]
+ *       (lambda (f_k) ((f_k k) v_1 v_2 ... v_n))))
+ */
 void AST2CPS::visit(const EvalNode* const node) {
-    const auto k = get_cont_label();
+    // F[[f]]
+    const auto f_cps = [&] {
+        AST2CPS visitor;
+        node->get_children()[0]->accept(visitor);
+        return dynamic_cast<LambdaCPS*>(visitor.res);
+    }();
+
+    // binds
+    std::vector<LambdaCPS::bind_ptr> binds;
+    binds.reserve(node->size() - 1);
+    for (std::size_t i = 1; i < node->size(); i++) {
+        AST2CPS visitor;
+        node->get_children()[i]->accept(visitor);
+        const auto sym = gen_local_var();
+        const auto val = visitor.res;
+        binds.push_back(new BindCPS(sym, val));
+    }
+
+    // args
     std::vector<CPSNode::node_ptr> args;
-    CPSNode::node_ptr f_node = nullptr;
+    args.reserve(binds.size());
+    for (const auto e : binds) args.push_back(new VarCPS(e->get_name()));
 
-    auto gen_rec = [&] {
-        auto f = [&](const std::size_t i, auto rec) -> void {
-            if (i == node->get_children().size()) {
-                // (f_node k)
-                const auto f_k = new ApplyCPS(f_node, { new VarCPS(k) });
+    // (lambda (f_k) ((f_k k) v_1 ... v_n))
+    const auto f_k = gen_cont_label(), k = gen_cont_label();
+    const auto f_k_k = new ApplyCPS(new VarCPS(f_k), { new VarCPS(k) });
+    const auto proc = new ApplyCPS(f_k_k, std::move(args));
+    const auto body = new LambdaCPS({ f_k }, proc);
 
-                // ((f_node k) args)
-                this->res = new ApplyCPS(f_k, args);
-                return;
-            }
-            
-            const auto k_i = get_cont_label();
-            if (!f_node) {
-                // f_node = F[[f]]
-                f_node = new VarCPS(k_i);
-            } else {
-                args.push_back(new VarCPS(k_i));
-            }
-            
-            rec(i + 1, rec);
-            AST2CPS visitor_i;
-            node->get_children()[i]->accept(visitor_i);
+    // (F[[f]] body)
+    const auto ret = new ApplyCPS(f_cps, { body });
 
-            /*
-             * (F[[a_i]]
-             *   (lambda (k) this->res))
-             */
-            this->res = new ApplyCPS(visitor_i.res, { new LambdaCPS({ k_i }, this->res) });
-        };
-        f(0, f);
-    };
-
-    gen_rec();
-
-    /*
-     * (lambda (k)
-     *   (F[[a_1]]
-     *     (lambda (v_1)
-     *       (F[[a_2]]
-     *         (lambda (v_2) ...
-     *           (F[[f]]
-     *             (lambda (f_k) ((f_k) k) v_1 v_2 ... v_n)))))))
-     */
-    this->res = new LambdaCPS({ k }, this->res);
+    // (lambda (k) binds ret)
+    this->res = new LambdaCPS({ k }, std::move(binds), ret);
 }
 
 void AST2CPS::visit(const LambdaNode* const node) {
-    const auto k1 = get_cont_label();
-    const auto k2 = get_cont_label();
+    const auto k1 = gen_cont_label();
+    const auto k2 = gen_cont_label();
 
     // args
     std::vector<std::string> args;
@@ -351,21 +358,21 @@ void AST2CPS::visit(const SymbolNode* const node) {
     if (auto ptr = PrimitiveCPS::try_make(symbol)) {
         use = util::to_str<PrimitiveCPS::Type>(ptr->get_type());
     }
-    const auto k = get_cont_label();
+    const auto k = gen_cont_label();
     this->res = new LambdaCPS({ k },
                               new ApplyCPS(new VarCPS(k), 
                                            { new VarCPS(use) }));
 }
 
 void AST2CPS::visit(const ConstantNode* const node) {
-    const auto k = get_cont_label();
+    const auto k = gen_cont_label();
     this->res = new LambdaCPS({ k }, 
                               new ApplyCPS(new VarCPS(k), 
                                            { new ConstantCPS(node->get_value()) }));
 }
 
 void AST2CPS::visit(const SequenceNode* const node) {
-    const auto k = get_cont_label();
+    const auto k = gen_cont_label();
 
     auto gen_rec = [&] {
         auto f = [&](const std::size_t i, auto rec) -> void {

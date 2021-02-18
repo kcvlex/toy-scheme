@@ -5,22 +5,22 @@
 
 namespace compiler {
 
-/******************** Operand ********************/
+/******************** operand_type ********************/
 
-Operand preg2operand(const PhysicalRegister preg) {
-    return Operand(reg_type(preg));
+operand_type preg2operand(const PhysicalRegister preg) {
+    return operand_type(reg_type(preg));
 }
 
-Operand vreg2operand(const VritualRegister vreg) {
-    return Operand(reg_type(vreg));
+operand_type vreg2operand(const VritualRegister vreg) {
+    return operand_type(reg_type(vreg));
 }
 
-Operand imm2operand(const imm_value_type imm) {
-    return Operand(imm);
+operand_type imm2operand(const imm_value_type imm) {
+    return operand_type(imm);
 }
 
-Operand label2operand(const label_type label) {
-    return Operand(label);
+operand_type label2operand(const label_type label) {
+    return operand_type(label);
 }
 
 
@@ -37,22 +37,22 @@ ThreeAddressCode::ThreeAddressCode(const Instructions instr)
 }
 
 ThreeAddressCode::ThreeAddressCode(const Instructions instr,
-                                   const Operand op1)
+                                   const operand_type op1)
     : instr(instr), op1(op1), op2(std::nullopt), op3(std::nullopt)
 {
 }
 
 ThreeAddressCode::ThreeAddressCode(const Instructions instr,
-                                   const Operand op1,
-                                   const Operand op2)
+                                   const operand_type op1,
+                                   const operand_type op2)
     : instr(instr), op1(op1), op2(op2), op3(std::nullopt)
 {
 }
 
 ThreeAddressCode::ThreeAddressCode(const Instructions instr,
-                                   const Operand op1,
-                                   const Operand op2,
-                                   const Operand op3)
+                                   const operand_type op1,
+                                   const operand_type op2,
+                                   const operand_type op3)
     : instr(instr), op1(op1), op2(op2), op3(op3)
 {
 }
@@ -87,7 +87,7 @@ std::ostream& operator<<(std::ostream &os, const reg_type &val) {
                       val);
 }
 
-std::ostream& operator<<(std::ostream &os, const Operand &val) {
+std::ostream& operator<<(std::ostream &os, const operand_type &val) {
     return std::visit([&](const auto &v) { return (os << v); },
                       val);
 }
@@ -165,24 +165,24 @@ OutputCodeStream& OutputCodeStream::append_code(const Instructions instr) {
 }
 
 OutputCodeStream& OutputCodeStream::append_code(const Instructions instr,
-                                                const Operand op1)
+                                                const operand_type op1)
 {
     buf.emplace_back(instr, op1);
     return *this;
 }
 
 OutputCodeStream& OutputCodeStream::append_code(const Instructions instr,
-                                                const Operand op1,
-                                                const Operand op2)
+                                                const operand_type op1,
+                                                const operand_type op2)
 {
     buf.emplace_back(instr, op1, op2);
     return *this;
 }
 
 OutputCodeStream& OutputCodeStream::append_code(const Instructions instr,
-                                                const Operand op1,
-                                                const Operand op2,
-                                                const Operand op3)
+                                                const operand_type op1,
+                                                const operand_type op2,
+                                                const operand_type op3)
 {
     buf.emplace_back(instr, op1, op2, op3);
     return *this;

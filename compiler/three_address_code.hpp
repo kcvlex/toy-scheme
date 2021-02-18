@@ -15,9 +15,9 @@
 namespace compiler {
 
 using reg_type = std::variant<PhysicalRegister, VirtualRegister>;
-using Operand = std::variant<reg_type, 
-                             imm_value_type, 
-                             label_type>;
+using operand_type = std::variant<reg_type, 
+                                  imm_value_type, 
+                                  label_type>;
 
 enum class Instructions {
     LUI = 0,
@@ -26,36 +26,36 @@ enum class Instructions {
     BEQ, BNE, BLT, BGE, BLTU, BGEU,
     LB, LH, LW, LBU, LHU,
     SB, SH, SW,
-    ADDI, SLTI, SLTIU, XORI, ORI, ANDI, SLLI, SRLI,
+    ADDI, SLTI, SLTIU, XORI, ORI, ANDI, SLLI, SRLI, SRAI,
     ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND,
     FENCE,
     Size,
 };
 
-Operand preg2operand(const PhysicalRegister preg);
-Operand vreg2operand(const VirtualRegister vreg);
-Operand imm2operand(const imm_value_type imm);
-Operand label2operand(const label_type label);
+operand_type preg2operand(const PhysicalRegister preg);
+operand_type vreg2operand(const VirtualRegister vreg);
+operand_type imm2operand(const imm_value_type imm);
+operand_type label2operand(const label_type label);
 
 struct ThreeAddressCode {
     Instructions instr;
-    std::optional<Operand> op1, op2, op3;
+    std::optional<operand_type> op1, op2, op3;
 
     ThreeAddressCode();
 
     ThreeAddressCode(const Instructions instr);
 
     ThreeAddressCode(const Instructions instr, 
-                     const Operand op1);
+                     const operand_type op1);
 
     ThreeAddressCode(const Instructions instr, 
-                     const Operand op1, 
-                     const Operand op2);
+                     const operand_type op1, 
+                     const operand_type op2);
 
     ThreeAddressCode(const Instructions instr, 
-                     const Operand op1, 
-                     const Operand op2, 
-                     const Operand op3);
+                     const operand_type op1, 
+                     const operand_type op2, 
+                     const operand_type op3);
 
     /*
     void read(reg_type &r1, reg_type &r2, reg_type &r3) const;
@@ -81,7 +81,7 @@ struct ThreeAddressCode {
 };
 
 std::ostream& operator<<(std::ostream &os, const reg_type &val);
-std::ostream& operator<<(std::ostream &os, const Operand &val);
+std::ostream& operator<<(std::ostream &os, const operand_type &val);
 std::ostream& operator<<(std::ostream &os, const ThreeAddressCode &val);
 
 struct CodeSequence : public std::vector<ThreeAddressCode> {

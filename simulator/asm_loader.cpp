@@ -31,30 +31,51 @@ struct Initializer {
 } initializer;
 
 template <typename EnumType, std::size_t Size>
-EnumType str2enum_value(const std::string &s, const std::array<std::string, Size> &arr) {
+std::optional<EnumType> str2enum_value(const std::string &s, const std::array<std::string, Size> &arr) {
     const auto ite = std::find(std::cbegin(arr), std::cend(arr), s);
-    if (ite == std::cend(arr)) {
-        throw std::runtime_error(s + " is invalid");
-    }
+    if (ite == std::cend(arr)) return std::nullopt;
     const auto idx = std::distance(std::cbegin(arr), ite);
     return static_cast<EnumType>(idx);
 }
 
-void scan_ss(std::stringstream &ss, const char delim) {
-    std::string s;
-    if (std::getline(ss, s, delim)) throw std::runtime_error(s);
-}
-
-template <typename Head, typename... Tails>
-void scan_ss(std::stringstream &ss, const char delim, Head &&head, Tails&&... tails) {
-    if (!std::getline(ss, std::forward<Head>(head), delim)) {
-        throw std::runtime_error("EOF");
-    }
-    scan_ss(ss, delim, std::forward<Tails>(tails)...);
-}
-
 }  // anonymouse
 
+
+bool AsmParser::parse_line() {
+    eat_spaces();
+    const char c = is->get();
+    if (c == EOF) return false;
+
+    is->unget();
+    if (c == '#') {
+        parse_comment();
+    } else if (c == '.') {
+        res_priv.emplace_back(std::move(parse_dir()));
+    } else {
+        res_priv.emplace_back(std::move(parse_instr()));
+    }
+    eat_spaces();
+    eat_comment();
+    eat_endl();
+    return true;
+}
+
+simulator::AsmDirective AsmParser::parse_dir() {
+    // FIXME
+}
+
+simulator::AsmOperand AsmParser::parse_operand() {
+    eat_spaces();
+
+    std::string s;
+    while (true) {
+        const char c = is->get();
+        if (is_delim(c)) {
+            break;
+        }
+        s += c;
+    }
+}
 
 AsmFileLoader::AsmFileLoader(std::string filename_arg)
     : cur_addr(0),
