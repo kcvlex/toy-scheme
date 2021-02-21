@@ -9,7 +9,7 @@
 %token <bool> BOOL
 
 %start root
-%type <Ast.ast_node> root
+%type <Ast.t> root
 
 %%
 
@@ -44,9 +44,9 @@ apply: expr list(expr) { Apply($1, $2) };
 
 (* Atom *)
 atom:
-  | NUM { Num($1) }
-  | BOOL { Bool($1) }
-  | SYMBOL { Symbol($1) }
+  | NUM { Num $1 }
+  | BOOL { Bool $1  }
+  | SYMBOL { Symbol $1  }
 ;
 
 %%
