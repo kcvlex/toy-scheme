@@ -8,5 +8,5 @@
   (name compiler))
 
 (env
- (dev
-  (flags (:standard -w -37))))
+  (dev
+    (flags (:standard -w -37))))

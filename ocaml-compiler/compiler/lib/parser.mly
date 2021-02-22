@@ -17,7 +17,7 @@ root: expr EOF { $1 } ;
 
 (* Cons *)
 expr:
-  | term expr { Cons($1, $2) }
+  | term expr { Cons ($1, $2) }
   | term { $1 }
 ;
 
@@ -33,14 +33,14 @@ term_aux:
 ;
 
 (* Lambda *)
-lambda: LAMBDA LPAREN args RPAREN expr { Lambda($3, $5) };
-args: list(SYMBOL) { $1 };
+lambda: LAMBDA LPAREN args RPAREN expr { Lambda ($3, $5) };
+args: list(SYMBOL) { List.map (fun s -> (Symbol s)) $1 };
 
 (* Define *)
-define: DEFINE SYMBOL expr { Define($2, $3) };
+define: DEFINE SYMBOL expr { Define ((Symbol $2), $3) };
 
 (* Apply *)
-apply: expr list(expr) { Apply($1, $2) };
+apply: term list(term) { Apply ($1, $2) };
 
 (* Atom *)
 atom:
