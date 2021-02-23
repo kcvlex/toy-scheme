@@ -17,8 +17,8 @@ root: expr EOF { $1 } ;
 
 (* Cons *)
 expr:
-  | term expr { Cons ($1, $2) }
-  | term { $1 }
+  | term expr { Cons ($1, Some $2) }
+  | term { Cons ($1, None) }
 ;
 
 term:
