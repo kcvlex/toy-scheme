@@ -1,7 +1,6 @@
 type t =
   | Value of cps_adm_sym * cps_value
   | Cont of cps_cont
-  | ApplyCont of cps_cont * t
   | PassCont of t * cps_cont
   | ApplyFunc of cps_sym * cps_cont * cps_sym list
   | Bind of cps_sym * cps_sym * t

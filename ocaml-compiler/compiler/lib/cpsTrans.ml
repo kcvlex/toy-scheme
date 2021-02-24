@@ -103,10 +103,6 @@ let rec cps2ast cps = match cps with
       let v = cps_value2ast v in
       Lambda ([ k ], Apply (k, [ v ]))
   | Cont c -> cps_cont2ast c
-  | ApplyCont (cont, cps) ->
-      let f = cps_cont2ast cont in
-      let arg = cps2ast cps in
-      Apply (f, [ arg ])
   | PassCont (cps, cont) ->
       let f = cps2ast cps in
       let arg = cps_cont2ast cont in
