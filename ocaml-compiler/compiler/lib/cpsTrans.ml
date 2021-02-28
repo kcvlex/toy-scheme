@@ -119,6 +119,7 @@ let rec cps2ast cps = match cps with
       Cons (Define (x, t), Some body)
 and cps_sym2ast sym = match sym with
   | UserSym s -> Symbol s
+  | GeneratedSym i -> Symbol ("__v" ^ (string_of_int i))
   | Primitive "+" -> Symbol "add"
   | Primitive "-" -> Symbol "sub"
   | Primitive s -> Symbol s

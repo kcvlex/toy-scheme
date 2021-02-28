@@ -7,6 +7,7 @@ type t =
 and cps_sym =
   | UserSym of string
   | Primitive of string
+  | GeneratedSym of int
   | AdmSym of cps_adm_sym
 and cps_adm_sym =
   | AdmCont of int
