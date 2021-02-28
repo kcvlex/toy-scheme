@@ -1,22 +1,19 @@
 type t =
-  | Value of cps_adm_sym * cps_value
-  | Cont of cps_cont
-  | PassCont of t * cps_cont
-  | ApplyFunc of cps_sym * cps_cont * cps_sym list
+  | AdmLambda of cps_sym * t
+  | ApplyFunc of cps_sym * cps_sym * cps_sym list
+  | PassCont of t * t
+  | CallCont of t * t
+  | Sym of cps_sym
   | Bind of cps_sym * cps_sym * t
+  | Value of cps_sym * cps_value
 and cps_sym =
   | UserSym of string
   | Primitive of string
+  | ContSym of int
+  | ParamSym of int
   | GeneratedSym of int
-  | AdmSym of cps_adm_sym
-and cps_adm_sym =
-  | AdmCont of int
-  | AdmParam of int
-and cps_cont =
-  | ContSym of cps_adm_sym
-  | AdmLambda of cps_adm_sym * t
 and cps_value =
   | Int of int
   | Bool of bool
-  | Sym of cps_sym
-  | Lambda of cps_adm_sym * cps_sym list * t
+  | Ref of cps_sym
+  | Lambda of cps_sym * cps_sym list * t
