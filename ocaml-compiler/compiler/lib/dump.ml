@@ -68,14 +68,6 @@ let ast2code ast =
         in
         car ^ " " ^ cdr
   in
-  let display = 
-    begin
-      let k = Symbol "k" in
-      let display = Symbol "display" in
-      let display = Ast.Lambda ([ k ], (Apply (display, [ k ]))) in
-      display
-    end
-  in
-  (* let ast = Ast.Cons (add, Apply (ast, [ display ])) in *)
+  let display = Symbol "display" in
   let ast = Apply (ast, [ display ]) in
   ast2code_aux ast

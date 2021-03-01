@@ -4,7 +4,7 @@
   (modules parser))
   
 (library
-  (modules_without_implementation ast cps)
+  (modules_without_implementation ast cps deBruijnIndex)
   (name compiler))
 
 (env
