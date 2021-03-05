@@ -2,7 +2,7 @@
   open Ast
 %}
 
-%token LAMBDA DEFINE
+%token LAMBDA DEFINE COND ELSE
 %token LPAREN RPAREN EOF
 %token <string> SYMBOL
 %token <int> NUM
@@ -15,38 +15,45 @@
 
 root: expr EOF { $1 } ;
 
-(* Cons *)
-expr:
-  | term expr { Cons ($1, Some $2) }
-  | term { Cons ($1, None) }
-;
+(* Expr *)
+expr: 
+  | define expr {
+      match $2 with
+        | Define (lis, body) -> Define ($1 :: lis, body)
+        | _ -> Define ([ $1 ], $2)
+    }
+  | term { $1 }
+
+(* Define *)
+define: LPAREN DEFINE SYMBOL expr RPAREN { Bind { sym = $3; def = $4 } };
 
 term:
-  | LPAREN term_aux RPAREN { $2 }
+  | lambda { $1 }
+  | cond { $1 }
+  | apply { $1 }
   | atom { $1 }
 ;
 
-term_aux:
-  | lambda { $1 }
-  | define { $1 }
-  | apply { $1 }
-;
-
 (* Lambda *)
-lambda: LAMBDA LPAREN args RPAREN expr { Lambda ($3, $5) };
-args: list(SYMBOL) { List.map (fun s -> (Symbol s)) $1 };
-
-(* Define *)
-define: DEFINE SYMBOL expr { Define ((Symbol $2), $3) };
+lambda: LPAREN LAMBDA args expr RPAREN { Lambda ($3, $4) };
+args: LPAREN list(SYMBOL) RPAREN { List.map (fun s -> (Symbol s)) $2 };
 
 (* Apply *)
-apply: term list(term) { Apply ($1, $2) };
+apply: LPAREN expr list(expr) RPAREN { Apply ($2, $3) };
 
 (* Atom *)
 atom:
   | NUM { Num $1 }
   | BOOL { Bool $1  }
   | SYMBOL { Symbol $1  }
+;
+
+(* Cond *)
+cond: LPAREN COND cond_aux RPAREN { $3 };
+
+cond_aux:
+  | LPAREN expr expr RPAREN LPAREN ELSE expr RPAREN { Branch ($2, $3, $7) }
+  | LPAREN expr expr RPAREN cond_aux { Branch ($2, $3, $5) }
 ;
 
 %%

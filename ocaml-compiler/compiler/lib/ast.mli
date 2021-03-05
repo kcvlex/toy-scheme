@@ -4,5 +4,6 @@ type t =
   | Symbol of string
   | Lambda of t list * t
   | Apply of t * t list
-  | Define of t * t
-  | Cons of t * t option
+  | Define of bind list * t
+  | Branch of t * t * t
+and bind = Bind of { sym : string; def : t; }

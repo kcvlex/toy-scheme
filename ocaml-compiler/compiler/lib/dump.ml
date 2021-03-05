@@ -32,11 +32,10 @@ let ast2str node =
           let args = (List.map (fun n -> ast2str_aux n (nest + 1)) args) in
           let args = String.concat "" args in
           label ^ f ^ args
-      | Define (name, def) -> "DefineNode(" ^ (sym2str name) ^ ")\n" ^ (ast2str_aux def (nest + 1))
-      | Cons (car, cdr) ->
-          let cdr = Option.map (fun x -> ast2str_aux x (nest + 1)) cdr in
-          let cdr = Option.value cdr ~default:"" in
-          "ConsNode\n" ^ (ast2str_aux car (nest + 1)) ^ cdr
+      | Define (_, body) -> "!!UNIMPLED!!\n" ^ (ast2str_aux body nest)
+      | Branch (p, th, els) -> 
+          let tmp ast = ast2str_aux ast (nest + 1) in
+          join [ "BranchNode"; tmp p; tmp th; tmp els ] "\n"
     in
     prefix ^ body in
   ast2str_aux node 0
@@ -56,17 +55,18 @@ let ast2code ast =
         let seq = f :: args in
         let seq = List.map (fun x -> ast2code_aux x) seq in
         "(" ^ (join seq " ") ^ ")"
-    | Define (sym, def) ->
-        let sym = ast2code_aux sym in
-        let def = ast2code_aux def in
-        "(define " ^ sym ^ " " ^ def ^ ")"
-    | Cons(car, cdr) ->
-        let car = ast2code_aux car in
-        let cdr = match cdr with
-          | Some c -> ast2code_aux c
-          | None -> ""
-        in
-        car ^ " " ^ cdr
+    | Define (blis, body) ->
+        let blis = List.map bind2code blis in
+        let body = ast2code_aux body in
+        (join blis " ") ^ " " ^ body
+    | Branch (p, th, els) ->
+        let p = ast2code_aux p in
+        let th = ast2code_aux th in
+        let els = ast2code_aux els in
+        let seq = [ "if"; p; th; els ] in
+        "(" ^ (join seq " ") ^ ")"
+  and bind2code bind = match bind with
+    | Bind { sym = sym; def = def; } -> "(define " ^ sym ^ " " ^ (ast2code_aux def) ^ ")"
   in
   let display = Symbol "display" in
   let ast = Apply (ast, [ display ]) in

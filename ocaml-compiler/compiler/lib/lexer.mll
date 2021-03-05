@@ -4,7 +4,7 @@
 
 let delim = [ ' ' '\t' '\n' ]
 
-let primitive = [ '+' '-' '*' '/' ]
+let primitive = [ '+' '-' '*' '/' '<' ]
 
 rule program = parse
   | delim+ { program lexbuf }
@@ -12,6 +12,8 @@ rule program = parse
   | ')' { RPAREN }
   | "lambda" { LAMBDA }
   | "define" { DEFINE }
+  | "cond" { COND }
+  | "else" { ELSE }
   | "#t" { BOOL true }
   | "#f" { BOOL false }
   | primitive as c { SYMBOL (Char.escaped c) }

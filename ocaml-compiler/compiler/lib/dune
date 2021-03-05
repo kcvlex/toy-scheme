@@ -4,9 +4,12 @@
   (modules parser))
   
 (library
-  (modules_without_implementation ast cps deBruijnIndex)
+  (modules_without_implementation ast 
+                                  cps 
+                                  deBruijnIndex
+                                  closure)
   (name compiler))
 
 (env
   (dev
-    (flags (:standard -w -37))))
+    (flags (:standard -warn-error -A))))

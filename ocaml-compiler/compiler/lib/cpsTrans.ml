@@ -3,6 +3,8 @@ open Ast
 
 exception CPSError of string
 
+module SS = Set.Make(String)
+
 let cont_id_counter = ref 0
 let cont_param_counter = ref 0
 
@@ -32,6 +34,7 @@ let to_primitive ast =
     match s with
       | "+" -> true
       | "-" -> true
+      | "<" -> true
       | _ -> false
   end in
   match ast with
@@ -43,16 +46,22 @@ let make_cps_value value =
   AdmLambda (k, Passing (Ref k, value))
 
 (* `next` is used in Define *)
-let rec cps_trans_aux ast next = match ast with
+let rec cps_trans_aux ast defset =
+  let recf ast = cps_trans_aux ast defset in
+  match ast with
   | Num n -> make_cps_value (Int n)
   | Bool b -> make_cps_value (Bool b)
   | Symbol s -> (match to_primitive ast with
     | Some p -> Ref p
-    | None -> make_cps_value (Ref (UserSym s)))
+    | None -> 
+        if SS.mem s defset then
+          Ref (UserSym s)
+        else
+          make_cps_value (Ref (UserSym s)))
   | Lambda (args, body) ->
       let k = fresh_cont_id () in
       let args = List.map (fun x -> (sym2sym x)) args in
-      let body = cps_trans_aux body None in
+      let body = recf body in
       make_cps_value (Lambda (k, args, Passing (body, Ref k)))
   | Apply (f, args) ->
       let merge_args body params cps_lis =
@@ -60,9 +69,9 @@ let rec cps_trans_aux ast next = match ast with
         let body = List.fold_right2 merge cps_lis params body in
         body
       in
-      let f = cps_trans_aux f None in
+      let f = recf f in
       let k = fresh_cont_id () in
-      let args = List.map (fun x -> cps_trans_aux x None) args in
+      let args = List.map (fun x -> recf x) args in
       let params = fresh_cont_param_list (List.length args) in
       let merged = (match f with
         | Ref (Primitive s) ->
@@ -74,23 +83,31 @@ let rec cps_trans_aux ast next = match ast with
             merge_args body (t :: params) (f :: args))
       in
       AdmLambda (k, merged)
-  | Define (sym, def) ->
-      let sym = sym2sym sym in
-      let def = cps_trans_aux def None in
+  | Define (blis, body) ->
+      let rec add_binds blis set = (match blis with
+        | (Bind { sym = sym; def = _; }) :: xs -> add_binds xs (SS.add sym set)
+        | _ -> set)
+      in
+      let defset = add_binds blis defset in
+      let blis = List.map (fun x -> binding2cps x defset) blis in
+      let body = cps_trans_aux body defset in
+      let k = fresh_cont_id () in
+      AdmLambda (k, Fix (blis, Passing (body, Ref k)))
+  | Branch (p, th, els) ->
       let k = fresh_cont_id () in
       let t = fresh_cont_param () in
-      let body = Option.map (fun x -> (Passing (x, Ref k))) next in
-      let body = Option.value body ~default:(Ref k) in
-      let body = Bind (sym, Ref t, body) in
-      let body = AdmLambda (t, body) in
-      let body = Passing (def, body) in
-      AdmLambda (k, body)
-  | Cons (car, cdr) ->
-      let cdr = Option.map (fun x -> cps_trans_aux x None) cdr in
-      let car = cps_trans_aux car cdr in
-      car
+      let th = recf th in
+      let els = recf els in
+      let br = Cps.Branch (Ref t, Passing (th, Ref k), Passing (els, Ref k)) in
+      let br = AdmLambda (t, br) in
+      let br = Passing (recf p, br) in
+      AdmLambda (k, br)
+and binding2cps b defset = match b with
+  | Bind { sym = sym; def = def; } ->
+      let def = cps_trans_aux def defset in
+      Cps.Bind { sym = sym; body = def; }
 
-let cps_transformation ast = cps_trans_aux ast None
+let cps_transformation ast = cps_trans_aux ast SS.empty
 
 let rec cps2ast cps = match cps with
   | AdmLambda (sym, body) -> Lambda ([ (cps_sym2ast sym) ], cps2ast body)
@@ -100,11 +117,10 @@ let rec cps2ast cps = match cps with
       let args = List.map cps2ast args in
       Apply(f, k :: args)
   | Passing (f, c) -> Apply (cps2ast f, [ (cps2ast c) ])
-  | Bind (x, t, body) -> 
-      let x = cps_sym2ast x in
-      let t = cps2ast t in
+  | Fix (blis, body) ->
+      let blis = List.map cps_fix2ast blis in
       let body = cps2ast body in
-      Cons (Define (x, t), Some body)
+      Define (blis, body)
   | Int i -> Num i
   | Bool b -> Bool b
   | Ref s -> cps_sym2ast s
@@ -113,10 +129,20 @@ let rec cps2ast cps = match cps with
       let args = List.map cps_sym2ast args in
       let body = cps2ast body in
       Lambda (adm :: args, body)
+  | Branch (t, th, els) ->
+      let t = cps2ast t in
+      let th = cps2ast th in
+      let els = cps2ast els in
+      Branch (t, th, els)
 and cps_sym2ast sym = match sym with
   | UserSym s -> Symbol s
   | Primitive "+" -> Symbol "add"
   | Primitive "-" -> Symbol "sub"
+  | Primitive "<" -> Symbol "less"
   | Primitive s -> Symbol s
   | ContSym i -> Symbol ("k" ^ (string_of_int i))
   | ParamSym i -> Symbol ("t" ^ (string_of_int i))
+and cps_fix2ast fix = match fix with
+  | Bind { sym = sym; body = body; } ->
+      let body = cps2ast body in
+      Bind { sym = sym; def = body; }

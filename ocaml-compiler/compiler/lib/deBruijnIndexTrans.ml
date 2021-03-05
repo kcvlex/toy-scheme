@@ -24,20 +24,22 @@ let add_if_adm sym d var2index =
     | Some k -> (AdmVarMap.add k (d + 1) var2index, d + 1)
     | None -> (var2index, d + 1)
 
-let rec dfs cps d var2index = match cps with
+let rec dfs cps d var2index =
+  let dfs_aux cps = dfs cps d var2index in
+  match cps with
   | Cps.AdmLambda (sym, t) ->
       let added = add_if_adm sym d var2index in
       AdmLambda (sym, dfs t (snd added) (fst added))
   | Cps.ApplyFunc (f, k, args) ->
-      let f = dfs f d var2index in
-      let k = dfs k d var2index in
-      let args = List.map (fun x -> dfs x d var2index) args in
+      let f = dfs_aux f in
+      let k = dfs_aux k in
+      let args = List.map dfs_aux args in
       ApplyFunc (f, k, args)
-  | Cps.Passing (x, y) -> Passing (dfs x d var2index, dfs y d var2index)
-  | Cps.Bind (x, t, body) -> 
-      let t = dfs t d var2index in
-      let body = dfs body d var2index in
-      Bind (x, t, body)
+  | Cps.Passing (x, y) -> Passing (dfs_aux x, dfs_aux y)
+  | Cps.Fix (flis, t) ->
+      let flis = List.map (fun x -> fix2fix x d var2index) flis in
+      let t = dfs_aux t in
+      Fix (flis, t)
   | Cps.Int i -> Int i
   | Cps.Bool b -> Bool b
   | Cps.Ref sym -> replace_if_adm sym d var2index
@@ -52,6 +54,11 @@ let rec dfs cps d var2index = match cps with
       let cur = List.fold_left (fun x y -> update y x) cur args in
       let body = dfs body (snd cur) (fst cur) in
       Lambda (k, args, body, (List.length args) + 1)
+  | Cps.Branch (p, th, els) -> Branch (dfs_aux p, dfs_aux th, dfs_aux els)
+and fix2fix fix d var2index = match fix with
+  | Cps.Bind { sym = sym; body = body; } ->
+      let body = dfs body d var2index in
+      Bind { sym = sym; body = body; }
 
 let de_bruijn_indexing cps = dfs cps (-1) AdmVarMap.empty
 
@@ -61,26 +68,30 @@ let restore dbi_cps =
   let args = Vector.empty () in
   let add_arg arg = Vector.push_back args arg in
   let rm_args n = Vector.pops args n in
-  let rec restore_aux dcps =
-    match dcps with
-      | AdmLambda (sym, t) -> 
-          add_arg sym;
-          let res = Cps.AdmLambda (sym, restore_aux t) in
-          begin rm_args 1; res end
-      | ApplyFunc (f, k, args) -> Cps.ApplyFunc (restore_aux f, restore_aux k, List.map restore_aux args)
-      | Passing (a, b) -> Cps.Passing (restore_aux a, restore_aux b)
-      | Bind (x, t, body) -> Cps.Bind (x, restore_aux t, restore_aux body)
-      | Int i -> Cps.Int i
-      | Bool b -> Cps.Bool b
-      | Ref s -> Cps.Ref s
-      | RefIndex i -> Cps.Ref (Vector.rget args i)
-      | Lambda (k, args, body, len) ->
-          add_arg k; List.iter add_arg args;
-          let res = Cps.Lambda (k, args, restore_aux body) in
-          begin
-            rm_args len;
-            res
-          end
+  let rec restore_aux dcps = (match dcps with
+    | AdmLambda (sym, t) -> 
+        add_arg sym;
+        let res = Cps.AdmLambda (sym, restore_aux t) in
+        begin rm_args 1; res end
+    | ApplyFunc (f, k, args) -> Cps.ApplyFunc (restore_aux f, restore_aux k, List.map restore_aux args)
+    | Passing (a, b) -> Cps.Passing (restore_aux a, restore_aux b)
+    | Fix (flis, body) -> Cps.Fix (List.map fix2fix flis, restore_aux body)
+    | Int i -> Cps.Int i
+    | Bool b -> Cps.Bool b
+    | Ref s -> Cps.Ref s
+    | RefIndex i -> Cps.Ref (Vector.rget args i)
+    | Branch (p, th, els) -> Cps.Branch (restore_aux p, restore_aux th, restore_aux els)
+    | Lambda (k, args, body, len) ->
+        add_arg k; List.iter add_arg args;
+        let res = Cps.Lambda (k, args, restore_aux body) in
+        begin
+          rm_args len;
+          res
+        end)
+  and fix2fix dbi_fix = (match dbi_fix with
+    | Bind { sym = sym; body = body; } ->
+        let body = restore_aux body in
+        Cps.Bind { sym = sym; body = body; })
   in
   restore_aux dbi_cps
 
@@ -91,12 +102,13 @@ let rec to_str db_cps = match db_cps with
   | ApplyFunc (f, k, args) -> 
       List.fold_left (fun x y -> surround_paren (x ^ " " ^ (to_str y))) (to_str f) (k :: args)
   | Passing (x, y) -> surround_paren ((to_str x) ^ " " ^ (to_str y))
-  | Bind (x, t, body) -> surround_paren ("(let " ^ (sym2str x) ^ " " ^ (to_str t) ^ ") " ^ (to_str body))
+  | Fix (_, _) -> "UNIMPLED";
   | Int i -> string_of_int i
   | Bool true -> "#t"
   | Bool false -> "#f"
   | Ref sym -> sym2str sym
   | RefIndex i -> "_" ^ (string_of_int i)
+  | Branch (_, _, _) -> "UNIMPLED"
   | Lambda (k, args, body, _) ->
       let body = to_str body in
       List.fold_right (fun x y -> lambda_abst x y) (k :: args) body
