@@ -33,15 +33,6 @@ let get_body b = match b with
 
 let symset2list set = SymSet.fold (fun x y -> x :: y) set []
 
-(*
-let eq_sym sym1 sym2 = match (sym1, sym2) in
-  | (UserSym s1, UserSym s2) -> s1 == s2
-  | (Primitive s1, Primitive s2) -> s1 == s2
-  | (ContSym i1, ContSym i2) -> i1 == i2
-  | (ParamSym i1, ParamSym i2) -> i1 == i2
-  | _ -> false
-*)
-
 let clo_record_counter = ref 0
 
 let fresh_clo_record_num () =
@@ -196,6 +187,7 @@ let rec clo2ast_aux clo clo_to_ref clo_to_pass =
 and clo_sym2ast sym = match sym with
   | UserSym s -> Ast.Symbol s
   | Primitive "+" -> Ast.Symbol "add"
+  | Primitive "-" -> Ast.Symbol "sub"
   | Primitive "<" -> Ast.Symbol "less"
   | Primitive s -> Ast.Symbol s
   | ContSym i -> Ast.Symbol ("__k" ^ (string_of_int i))

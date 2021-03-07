@@ -7,6 +7,7 @@
   (modules_without_implementation ast 
                                   cps 
                                   deBruijnIndex
+                                  interlang
                                   closure)
   (name compiler))
 
