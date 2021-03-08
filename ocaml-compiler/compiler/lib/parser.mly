@@ -1,5 +1,5 @@
 %{
-  open Ast
+  open AstType
 %}
 
 %token LAMBDA DEFINE COND ELSE
@@ -9,7 +9,7 @@
 %token <bool> BOOL
 
 %start root
-%type <Ast.t> root
+%type <AstType.t> root
 
 %%
 
@@ -36,7 +36,7 @@ term:
 
 (* Lambda *)
 lambda: LPAREN LAMBDA args expr RPAREN { Lambda ($3, $4) };
-args: LPAREN list(SYMBOL) RPAREN { List.map (fun s -> (Symbol s)) $2 };
+args: LPAREN list(SYMBOL) RPAREN { $2 };
 
 (* Apply *)
 apply: LPAREN expr list(expr) RPAREN { Apply ($2, $3) };

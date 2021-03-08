@@ -1,4 +1,4 @@
-open DeBruijnIndex
+open DeBruijnIndexType
 
 let replace_term dbi_cps assign =
   let rec replace_aux cps adv =

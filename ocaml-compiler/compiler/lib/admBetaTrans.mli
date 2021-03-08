@@ -1,1 +1,1 @@
-val beta_trans : DeBruijnIndex.t -> DeBruijnIndex.t
+val beta_trans : DeBruijnIndexType.t -> DeBruijnIndexType.t

@@ -4,11 +4,12 @@
   (modules parser))
   
 (library
-  (modules_without_implementation ast 
-                                  cps 
-                                  deBruijnIndex
-                                  interlang
-                                  closure)
+  (modules_without_implementation symbolType
+                                  astType
+                                  cpsType
+                                  deBruijnIndexType
+                                  interlangType
+                                  closureType)
   (name compiler))
 
 (env
