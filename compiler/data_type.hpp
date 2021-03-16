@@ -4,11 +4,10 @@
 #include <variant>
 #include <vector>
 #include <cstdint>
+#include "alias.hpp"
 #include "three_address_code.hpp"
 
 namespace compiler {
-
-using addr_type = std::uint32_t;
 
 struct IntData;
 struct ConsData;
@@ -18,14 +17,15 @@ struct ContinuationData;
 struct EnvData;
 
 using data_type = std::variant<IntData*, 
-                               // ConsData*, 
+                               ConsData*, 
                                NilData*, 
                                RefData*, 
                                ContinuationData*,
                                EnvData*>;
 
 enum class DataTypeTag {
-    Int = 0,
+    Unknown = 0,
+    Int,
     Cons,
     Nil,
     Ref,
@@ -34,29 +34,46 @@ enum class DataTypeTag {
     Size
 };
 
-struct IntData {
+template <typename T>
+struct IDataType {
+    constexpr static DAtaTypeTag tag = T::tag;
+
+    CodeSequence gen_code() const {
+        return static_cast<T*>(this)->gen_code();
+    }
+};
+
+struct IntData : public IDataType<IntData> {
     using data_type = std::uint32_t;
+
+    constexpr static DataTypeTag tag = DataTypeTag::Int;
     data_type dat;
 
     IntData() = delete;
     IntData(const data_type dat_arg);
+
+    CodeSequence gen_code() const;
 };
 
-/*
-struct ConsData {
-    data_type car, cdr;
+struct ConsData : public IDataType<ConsData> {
+    constexpr static DataTypeTag tag = DataTypeTag::Cons;
+    addr_type *car;
+    addr_type *cdr;
 
     ConsData() = delete;
-    ConsData(const data_type car_arg,
-             const data_type cdr_arg);
+    ConsData(data_type* const car_arg,
+             data_type* const cdr_arg);
     ~ConsData();
+    
+    CodeSequence gen_code() const;
 };
-*/
 
 struct NilData {
+    constexpr static DataTypeTag tag = DataTypeTag::Nil;
 };
 
 struct RefData {
+    constexpr static DataTypeTag tag = DataTypeTag::Ref;
     addr_type addr;
 
     RefData() = delete;
@@ -64,6 +81,7 @@ struct RefData {
 };
 
 struct ContinuationData {
+    constexpr static DataTypeTag tag = DataTypeTag::Continuation;
     label_type pc;
     addr_type env_base;
 
@@ -73,21 +91,16 @@ struct ContinuationData {
 };
 
 struct EnvData {
-    std::size_t data_cnt;
+    constexpr static DataTypeTag tag = DataTypeTag::Env;
     addr_type sp, bp;
-    std::vector<addr_type> refs;
 
     EnvData() = delete;
-    EnvData(const std::size_t data_cnt_arg,
-            const addr_type sp_arg,
+    EnvData(const addr_type sp_arg,
             const addr_type bp_arg);
 };
 
-template <typename T, typename... Args>
-data_type make_record(Args&&... args) {
-    const T *dat = new T(std::forward<Args>(args)...);
-    const data_type ret { std::in_place_type<T*>, dat };
-    return ret;
+constexpr DataTypeTag get_data_type(const data_type &d) {
+    return std::visit([&](const data_type &arg) { return arg::tag; }, d);
 }
 
 }

@@ -1,6 +1,5 @@
 #include "code_generator.hpp"
 
-#if 0
 namespace compiler {
 
 
@@ -21,8 +20,8 @@ VirtualRegister RegisterMapping::get_new_reg() {
     return VirtualRegister::make_normal_reg(reg_counter++);
 }
 
-RegisterMapping::vreg_opt_type RegisterMapping::get_reg(const std::string &name) const {
-    const auto ite = map.find(name);
+RegisterMapping::vreg_opt_type RegisterMapping::get_reg(const std::string &var_name) const {
+    const auto ite = map.find(var_name);
     if (ite == map.end()) return vreg_opt_type(std::nullopt);
     return vreg_opt_type(ite->second);
 }
@@ -55,4 +54,3 @@ void FunctionCodeGenerator::build_env() {
 
 }
 
-#endif
