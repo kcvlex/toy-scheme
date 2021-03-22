@@ -1,0 +1,7 @@
+(tests
+  (libraries compiler)
+  (names testDecompiler 
+         testParser))
+(env
+  (dev
+    (flags (:standard -warn-error -A))))
