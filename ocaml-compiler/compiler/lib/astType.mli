@@ -6,4 +6,5 @@ type t =
   | Apply of t * t list
   | Define of bind list * t
   | Branch of t * t * t
+  | Statement of t list
 and bind = Bind of { sym : string; def : t; }

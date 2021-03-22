@@ -1,60 +1,20 @@
-open InterlangType
 open SymbolType
-open Symbol
+open ClosureType
+open InterlangType
 
-type t =
-  | Select of SymbolType.record_sym * int
-  | Ref of SymbolType.t
-  | Lambda of lambda_args * t * make_record
-  | Branch of t * t * t
-  | Apply of t * t * t list
-  | Fix of (string * t) list * t
-  | Int of int
-  | Bool of bool
-and lambda_args = Args of SymbolType.cont_sym option * SymbolType.record_sym * string list
-and make_record = SymbolType.record_sym * t list
+module StrIndexing = Map.Make(String)
 
-let rec lang_of_clo clo rsym = 
-  let recf c = lang_of_clo c rsym in
-  match clo with
-    | ClosureType.Apply (f, k, args) ->
-        let f = recf f in
-        let k = recf k in
-        let args = List.map recf args in
-        Apply (f, k, args)
-    | ClosureType.Fix (binds, t) ->
-        let b2b b = (match b with
-          | ClosureType.Bind { sym = sym; body = body } -> (sym, recf body))
+let make_indexing symlis =
+  let rec aux lis idx map = match lis with
+    | x :: xs -> 
+        let map = match x with
+          | CommonSym s -> StrIndexing.add s idx map
+          | _ -> map
         in
-        let binds = List.map b2b binds in
-        let t = recf t in
-        Fix (binds, t)
-  | ClosureType.Select i -> Select (rsym, i)
-  | ClosureType.Int i -> Int i
-  | ClosureType.Bool b -> Bool b
-  | ClosureType.Ref sym -> Ref sym
-  | ClosureType.Branch (p, t1, t2) -> Branch (recf p, recf t1, recf t2)
-  | ClosureType.Lambda (k, c, args, body, _, make) ->
-      let record = match c with
-        | RecordSym r -> r
-        | _ -> raise (Invalid_argument "c in ClosureType.Lambda")
-      in
-      let args = List.map (fun x -> string_of_sym x) args in
-      let k, args = match k with
-        | Some (ContSym s) -> (Some s, args)
-        | Some s -> (None, (string_of_sym s) :: args)
-        | None -> (None, args)
-      in
-      let body = lang_of_clo body record in
-      let make = make_of_clomake make record rsym in
-      let args = Args (k, record, args) in
-      Lambda (args, body, make)
-and make_of_clomake make newsym rsym =
-  let trans r = match r with
-    | (_, Some t) -> lang_of_clo t rsym
-    | (sym, None) -> Ref sym
+        aux xs (idx + 1) map
+    | [] -> map 
   in
-  (newsym, List.map trans make)
+  aux symlis 0 StrIndexing.empty
 
 let proc_sym_counter = ref 0
 
@@ -62,80 +22,94 @@ let fresh_proc_sym () =
   let res = !proc_sym_counter in
   incr proc_sym_counter; Proc res
 
-let rec flatten_aux lang record proc_list =
-  let rec f_list args lis = match args with
-      | x :: xs ->
-          let x, lis = flatten_aux x record lis in
-          let xs, lis = f_list xs lis in
-          (x :: xs, lis)
-      | [] -> ([], lis)
+let gen_proc_name name = match name with
+  | Some s -> s
+  | None -> ProcSym (fresh_proc_sym ())
+
+let rec flatten_aux clo proc_list name =
+  let rec rec_lis flis plis = match flis with
+    | x :: xs ->
+        let x, plis = flatten_aux x plis None in
+        let xs, plis = rec_lis xs plis in
+        (x :: xs, plis)
+    | [] -> ([], plis)
   in
-  match lang with
-    | Select (sym, i) -> (InterlangType.Select (sym, i), proc_list)
-    | Ref sym -> (InterlangType.Ref sym, proc_list)
-    | Lambda (args, body, make) ->
-        let args = match args with
-          | Args (k, rsym, lis) -> 
-            let rsym = match rsym with
-              | Record (-1) -> None
-              | Record i -> Some (Record i)
-            in
-            InterlangType.Args (k, rsym, lis)
+  match clo with
+    | ClosureType.Apply (a, b, c) ->
+        let a, proc_list = flatten_aux a proc_list None in
+        let b, proc_list = flatten_aux b proc_list None in
+        let c, proc_list = rec_lis c proc_list in
+        (Apply (a, b, c), proc_list)
+    | ClosureType.Select (sym, i) -> (Select (sym, i), proc_list)
+    | ClosureType.Int i -> (Int i, proc_list)
+    | ClosureType.Bool b -> (Bool b, proc_list)
+    | ClosureType.Ref s -> (Ref s, proc_list)
+    | ClosureType.Branch (a, b, c) ->
+        let a, proc_list = flatten_aux a proc_list None in
+        let b, proc_list = flatten_aux b proc_list None in
+        let c, proc_list = flatten_aux c proc_list None in
+        (Branch (a, b, c), proc_list)
+    | ClosureType.Lambda (args, cl, body) ->
+        let psym = gen_proc_name name in
+        let pargs = {
+          cont_arg = args.cont_arg;
+          closure_arg = args.clo_arg;
+          usr_args = args.args;
+        }
         in
-        let msym, mlis = make in
-        let mlis, proc_list = f_list mlis proc_list in
-        let make = (msym, mlis) in
-        let body, proc_list = flatten_aux body msym proc_list in
-        let psym = fresh_proc_sym () in
-        let proc = InterlangType.Procedure (psym, args, make, body) in
+        let record, proc_list =
+          let { rsym = rsym; seq = record_list } = cl in
+          let fn rele plis =
+            let { sym; body; index; local } = rele in
+            let body, plis = flatten_aux body plis (Some sym) in
+            let body = if local then Closure { proc = body; env = RecordSym rsym } else body in
+            (body, plis)
+          in
+          let rec fnlis lis plis binds = match lis with
+            | x :: xs ->
+                let x, plis = fn x plis in
+                let plis, binds = fnlis xs plis binds in
+                (plis, x :: binds)
+            | [] -> (plis, [])
+          in
+          let proc_list, binds = fnlis record_list proc_list [] in
+          ((rsym, binds), proc_list)
+        in
+        let body, proc_list = flatten_aux body proc_list None in
+        let proc = { psym = psym; args = pargs; record = record; body = body } in
         let proc_list = proc :: proc_list in
-        (InterlangType.Closure (psym, record), proc_list)
-    | Branch (p, t1, t2) ->
-        let p, proc_list = flatten_aux p record proc_list in
-        let t1, proc_list = flatten_aux t1 record proc_list in
-        let t2, proc_list = flatten_aux t2 record proc_list in
-        let branch = InterlangType.Branch (p, t1, t2) in
-        (branch, proc_list)
-    | Apply (f, k, args) ->
-        let f, proc_list = flatten_aux f record proc_list in
-        let k, proc_list = flatten_aux k record proc_list in
-        let args, proc_list = f_list args proc_list in
-        (InterlangType.Apply (f, k, args), proc_list)
-    | Fix (flis, body) ->
-        let l_lis = List.map fst flis in
-        let r_lis = List.map snd flis in
-        let r_lis, proc_list = f_list r_lis proc_list in
-        let flis = List.map2 (fun x y -> (x, y)) l_lis r_lis in
-        let body, proc_list = flatten_aux body record proc_list in
-        (InterlangType.Let (flis, body), proc_list)
-    | Int i -> (Int i, proc_list)
-    | Bool b -> (Bool b, proc_list)
+        (Ref psym, proc_list)
 
-let dummy_record = Record (-1)
+let flatten clo =
+  let lang, proc_list = flatten_aux clo [] None in
+  Program (proc_list, lang)
 
-let trans ast =
+let rec func2env clo rsym =
+  let recf c = func2env c rsym in
+  match clo with
+    | Apply (a, b, c) -> Apply (recf a, recf b, List.map recf c)
+    | Ref s -> (match s with
+      | ProcSym p -> Closure ({ proc = clo; env = RecordSym (Option.get rsym) })
+      | _ -> Ref s)
+    | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
+    | Closure { proc; env } -> Closure { proc = (recf proc); env = env }
+    | Program (plis, body) ->
+      let f p = 
+        let body = func2env p.body (Some (fst p.record)) in
+        { psym = p.psym; args = p.args; record = p.record; body = body }
+      in
+      Program (List.map f plis, body)
+    | _ -> clo
+
+let compile ast =
   let cps = Cps.cps_trans ast in
   let dbi = DeBruijnIndex.dbi_of_cps cps in
   let dbi = AdmBetaTrans.beta_trans dbi in
   let cps = DeBruijnIndex.cps_of_dbi dbi in
   let clo = Closure.closure_trans cps in
-  lang_of_clo clo dummy_record
-
-let flatten lang = 
-  let body, defs = flatten_aux lang dummy_record [] in
-  Program (defs, body)
-
-let compile ast = flatten (trans ast)
-
+  func2env (flatten clo) None
 
 (*
-let compile ast = flatten (trans ast)
-
-let rec join args delim = match args with
-  | x1 :: x2 :: xs -> x1 ^ delim ^ (join (x2 :: xs) delim)
-  | x1 :: [] -> x1
-  | [] -> ""
-
 let string_of_apply f args = f ^ "(" ^ (join args ", ") ^ ")"
 
 let rec string_of_interlang ilang = match ilang with
