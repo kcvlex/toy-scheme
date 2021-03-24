@@ -25,6 +25,11 @@ let string_of_ast node =
       | Branch (p, th, els) -> 
           let fn ast = string_of_ast_aux ast (nest + 1) in
           String.concat "\n" [ "BranchNode"; fn p; fn th; fn els ]
+      | Statement (tlis) ->
+          let fn ast = string_of_ast_aux ast (nest + 1) in
+          let tlis = List.map fn tlis in
+          let tlis = String.concat "\n" tlis in
+          "StatementNode\n" ^ tlis
     in
     prefix ^ body in
   string_of_ast_aux node 0
@@ -46,7 +51,7 @@ let code_of_ast ast =
         let seq = String.concat " " seq in
         "(" ^ seq ^ ")"
     | Define (blis, body) ->
-        let blis = List.map bind2code blis in
+        let blis = List.map code_of_bind blis in
         let blis = String.concat " " blis in
         let body = code_of_ast_aux body in
         blis ^ " " ^ body
@@ -57,9 +62,11 @@ let code_of_ast ast =
         let seq = [ "if"; p; th; els ] in
         let seq = String.concat " " seq in
         "(" ^ seq ^ ")"
-  and bind2code bind = match bind with
+    | Statement (tlis) ->
+        let tlis = List.map code_of_ast_aux tlis in
+        let tlis = String.concat " " tlis in
+        "(begin " ^ tlis ^ ")"
+  and code_of_bind bind = match bind with
     | Bind { sym = sym; def = def; } -> "(define " ^ sym ^ " " ^ (code_of_ast_aux def) ^ ")"
   in
-  let display = Symbol "display" in
-  let ast = Apply (ast, [ display ]) in
   code_of_ast_aux ast

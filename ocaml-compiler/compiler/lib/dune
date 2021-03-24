@@ -9,6 +9,7 @@
                                   cpsType
                                   deBruijnIndexType
                                   interlangType
+                                  refType
                                   closureType)
   (name compiler))
 

@@ -1,234 +1,204 @@
 open ClosureType
 open SymbolType
-open Symbol
+open RefType
 
-module OrderedSym = struct
-  type t = SymbolType.t
+module SymMap = Map.Make(Symbol)
+module SymSet = Set.Make(Symbol)
 
-  let to_pair sym = match sym with
-    | CommonSym s -> (0, s)
-    | Primitive s -> (1, s)
-    | ContSym (Cont n) -> (2, string_of_int n)
-    | ParamSym n -> (3, string_of_int n)
-    | RecordSym (Record n) -> (4, string_of_int n)
+let closure_sym_counter = ref 0
+let record_counter = ref 0
+        
+let get_sym b = 
+  let CpsType.Bind { sym = sym } = b in sym
 
-  let compare t1 t2 =
-    let t1 = to_pair t1 in
-    let t2 = to_pair t2 in
-    match (t1, t2) with
-      | ((a, b), (c, d)) -> if a != c then Int.compare a c else String.compare b d
-end
+let get_body b =
+  let CpsType.Bind { body = body } = b in body
 
-module SymSet = Set.Make(OrderedSym)
+let fresh_closure_sym () =
+  let res = !closure_sym_counter in
+  incr closure_sym_counter; Closure res
 
-let get_sym b = match b with
-  | CpsType.Bind { sym = sym; body = _ } -> sym
+let fresh_record_sym () =
+  let r = !record_counter in
+  incr record_counter; Record r
 
-let get_body b = match b with
-  | CpsType.Bind { sym = _; body = body } -> body
+let make_defsym2def binds =
+  let tbl = Hashtbl.create (List.length binds) in
+  let rec aux lis = match lis with
+    | x :: xs ->
+        let CpsType.Bind { sym = sym; body = body } = x in
+        Hashtbl.add tbl (CommonSym sym) body; aux xs
+    | [] -> ()
+  in
+  aux binds; tbl
 
-let symset2list set = SymSet.fold (fun x y -> x :: y) set []
-
-let clo_record_counter = ref 0
-
-let fresh_clo_record_num () =
-  let res = !clo_record_counter in
-  incr clo_record_counter; res
-
-let rec collect_free_vars_aux defined lambda_args is_top cps = 
-  let recf c = collect_free_vars_aux defined lambda_args is_top c in
+(* For simplicity, include defined value in FV *)
+let rec collect_free_vars_aux bindmap cps is_top =
+  let recf c = collect_free_vars_aux bindmap c is_top in
   match cps with
     | CpsType.AdmLambda (s, t) -> recf (CpsType.Lambda (s, [], t))
-    | CpsType.ApplyFunc (f, k, args) -> 
+    | CpsType.ApplyFunc (f, k, args) ->
         List.fold_left (fun x y -> SymSet.union x (recf y)) SymSet.empty (f :: k :: args)
     | CpsType.Passing (a, b) ->
         let s1 = recf a in
         let s2 = recf b in
         SymSet.union s1 s2
     | CpsType.Fix (binds, t) ->
-        let defined = List.fold_left (fun x y -> SymSet.add (CommonSym (get_sym y)) x) defined binds in
-        let f t = collect_free_vars_aux defined lambda_args is_top t in
-        let setlis = List.map (fun t -> f (get_body t)) binds in
-        let set = f t in
-        List.fold_left SymSet.union set setlis
+        let bindmap =
+          List.fold_left (fun x y -> SymMap.add (CommonSym (get_sym y)) false x) bindmap binds in
+        let recf c = collect_free_vars_aux bindmap c is_top in
+        let set = List.fold_left (fun x y -> SymSet.union (recf (get_body y)) x) SymSet.empty binds in
+        let set = SymSet.union set (recf t) in
+        set
     | CpsType.Ref sym ->
+        let s = Symbol.string_of_sym sym in
         (match sym with
           | Primitive _ -> SymSet.empty
-          | _ -> if SymSet.mem sym defined then SymSet.empty else SymSet.add sym SymSet.empty)
+          | _ ->
+              if not (SymMap.mem sym bindmap) then
+                SymSet.add sym SymSet.empty
+              else if not (SymMap.find sym bindmap) then
+                SymSet.empty
+              else if is_top then
+                SymSet.empty
+              else
+                SymSet.add sym SymSet.empty)
     | CpsType.Lambda (k, args, t) ->
-        let defined = 
-          if is_top then 
-            List.fold_left (fun x y -> SymSet.remove y x) defined lambda_args
-          else
-            defined
-        in
-        let defined = List.fold_left (fun x y -> SymSet.add y x) defined (k :: args) in
-        collect_free_vars_aux defined lambda_args false t
-    | CpsType.Branch (p, t1, t2) -> 
+        let bindmap = List.fold_left (fun x y -> SymMap.add y false x) bindmap (k :: args) in
+        collect_free_vars_aux bindmap t false
+    | CpsType.Branch (p, t1, t2) ->
         List.fold_left (fun x y -> SymSet.union x (recf y)) SymSet.empty [ p; t1; t2 ]
     | _ -> SymSet.empty
 
 
-let collect_free_vars cps = match cps with
-  | CpsType.Lambda (k, args, t) ->
-      let alis = k :: args in
-      let defined = List.fold_left (fun x y -> SymSet.add y x) SymSet.empty alis in 
-      collect_free_vars_aux defined alis true t
-  | _ -> raise (Invalid_argument "collect_free_vars")
+let collect_free_vars binds cps args passed_record =
+  let map = List.fold_left (fun x y -> SymMap.add y true x) SymMap.empty args in
+  let map = List.fold_left (fun x y -> SymMap.add y true x) map passed_record in
+  let lis = List.map get_body binds in
+  let lis = cps :: lis in
+  let res = List.map (fun x -> collect_free_vars_aux map x true) lis in
+  List.fold_left (fun x y -> SymSet.union x y) SymSet.empty res
 
 
-let rec set_record cps = match cps with
-  | CpsType.AdmLambda (s, t) -> set_record (CpsType.Lambda (s, [], t))
-  | CpsType.ApplyFunc (f, k, args) -> Apply (set_record f, set_record k, List.map set_record args)
-  | CpsType.Passing (a, b) -> Apply (set_record a, set_record b, [])
-  | CpsType.Fix (binds, t) -> Fix (List.map set_record_bind binds, set_record t)
-  | CpsType.Int i -> Int i
-  | CpsType.Bool b -> Bool b
-  | CpsType.Ref sym -> Ref sym
-  | CpsType.Lambda (k, args, t) -> 
-      let fv = collect_free_vars cps in
-      let record = match t with
-        | CpsType.Fix (binds, _) -> 
-            List.fold_left (fun x y -> SymSet.add (CommonSym (get_sym y)) x) fv binds
-        | _ -> fv
-      in
-      let record = symset2list record in
-      let num = fresh_clo_record_num () in
-      Lambda (Some k, RecordSym (Record num), args, set_record t, record, [])
-  | CpsType.Branch (p, t1, t2) -> Branch (set_record p, set_record t1, set_record t2)
-and set_record_bind b = match b with
-  | CpsType.Bind { sym = sym; body = body } -> Bind { sym = sym; body = set_record body }
-
-
-let get_select_idx sym lis =
-  let rec get_select_idx_aux sym lis i = 
-    match lis with
-      | x :: xs -> if x = sym then Some i else get_select_idx_aux sym xs (i + 1)
-      | [] -> None
-  in
-  get_select_idx_aux sym lis 0
-
-
-let rec set_select clo ref_r pass_r =
-  let recf c = set_select c ref_r pass_r in
-  let rec_bind b = (match b with
-    | Bind { sym = sym; body = body } -> Bind { sym = sym; body = (recf body) })
-  in
-  match clo with
-    | Apply (a, b, c) -> Apply (recf a, recf b, List.map recf c)
-    | Fix (binds, t) -> Fix (List.map rec_bind binds, recf t)
-    | Ref sym -> (match get_select_idx sym ref_r with
-      | Some i -> Select i
-      | None -> Ref sym)
-    | Branch (p, t1, t2) -> Branch (recf p, recf t1, recf t2)
-    | Lambda (k, c, args, t, r, []) ->
-        let ref_to_make_record sym = match get_select_idx sym pass_r with
-          | Some i -> Some (Select i)
-          | None -> None
+let rec closure_trans_aux cps passed_record created_record clsr_ref =
+  let recf c = closure_trans_aux c passed_record created_record clsr_ref in
+  match cps with
+    | CpsType.AdmLambda (s, t) -> recf (CpsType.Lambda (s, [], t))
+    | CpsType.ApplyFunc (f, k, args) -> 
+        Apply (recf f, recf k, List.map recf args)
+    | CpsType.Passing (a, b) -> Apply (recf a, recf b, [])
+    | CpsType.Fix _ -> raise (Invalid_argument "Fix must be at top of Lambda")
+    | CpsType.Int i -> Int i
+    | CpsType.Bool b -> Bool b
+    | CpsType.Ref sym -> (match ClosureRef.reftype clsr_ref sym with 
+      | LocalBind (_, rsym, i) -> 
+          Select (RecordSym rsym, i)
+      | PassedClosure (clsym, i) -> 
+          Select (ClosureSym clsym, i)
+      | PassingRecord (_, rsym, i) ->
+          Select (RecordSym rsym, i)
+      | Direct _ -> 
+          Ref sym)
+    | CpsType.Lambda (k, args, t) -> 
+        let passed_record = created_record in
+        let binds, body = match t with
+          | Fix (a, b) -> (a, b)
+          | _ -> ([], t)
         in
-        let makes = List.map (fun sym -> (sym, ref_to_make_record sym)) r in
-        Lambda (k, c, args, (set_select t pass_r r), r, makes)
-    | _ -> clo
-
-
-let closure_trans cps = set_select (set_record cps) [] []
-
-
-let clo_make_counter = ref 0
-let fresh_clo_make () = let res = !clo_make_counter in incr clo_make_counter; res
-let make_clo_to_pass () = "__defc" ^ (string_of_int (fresh_clo_make ()))
-
-let rec ast_of_clo_aux clo clo_to_ref clo_to_pass = 
-  let recf c = ast_of_clo_aux c clo_to_ref clo_to_pass in
-  match clo with
-    | Apply (f, k, args) ->
-        let f = recf f in
-        let k = recf k in
-        let args = List.map recf args in
-        let args = k :: args in
-        AstType.Apply (f, args)
-    | Fix (binds, t) ->
-        let binds = List.map (fun b -> ast_of_clobind b clo_to_ref clo_to_pass) binds in
-        Define (binds, recf t)
-    | Select i -> 
-        let r = string_of_sym clo_to_ref in
-        let r = AstType.Symbol r in
-        AstType.Apply (AstType.Symbol "list-ref", [ r; AstType.Num i ])
-    | Int i -> AstType.Num i
-    | Bool b -> AstType.Bool b
-    | Ref s -> AstType.Symbol (string_of_sym s)
-    | Branch (p, t1, t2) -> AstType.Branch (recf p, recf t1, recf t2)
-    | Lambda (k, c, args, body, _, make) ->
-        let pass = make_clo_to_pass () in
-        let body = ast_of_clo_aux body c pass in
-        let args = List.map string_of_sym args in
-        let make = ast_of_make make c pass in
-        let bind_c = AstType.Bind { sym = pass; def = make } in
-        let body = match body with
-          | AstType.Define (binds, t) -> AstType.Define (bind_c :: binds, t)
-          | _ -> AstType.Define ([ bind_c ], body)
+        let defined = List.map get_sym binds in
+        let defined = List.map (fun x -> CommonSym x) defined in
+        let clsym = fresh_closure_sym () in
+        let rsym = fresh_record_sym () in
+        let passing =
+          let fv = collect_free_vars binds t (k :: args) passed_record in
+          let res = List.fold_left (fun x y -> SymSet.add y x) fv defined in 
+          SymSet.elements res
         in
-        let k = Option.map string_of_sym k in
-        let c = string_of_sym c in
-        let args = args in
-        let args = match k with
-          | Some s -> s :: args
-          | None -> args
+        let created_record = passing in
+        let clsr_ref =
+          let passed = (clsym, passed_record) in
+          let created = (rsym, created_record) in
+          ClosureRef.make ~passed:passed ~created:created ~defined:defined
         in
-        let body = AstType.Lambda (args, body) in
-        let body = AstType.Lambda ([ c ], body) in
-        AstType.Apply (body, [ AstType.Symbol clo_to_pass ])
-and ast_of_clobind b clo_to_ref clo_to_pass = match b with
-  | Bind { sym = sym; body = body } -> 
-      let body = ast_of_clo_aux body clo_to_ref clo_to_pass in
-      AstType.Bind { sym = sym; def = body }
-and ast_of_make make clo_to_ref clo_to_pass =
-  let make = List.append make [ (Primitive "`()", None) ] in
-  let convert s = match s with
-    | (_, Some t) -> ast_of_clo_aux t clo_to_ref clo_to_pass
-    | (sym, None) -> AstType.Symbol (string_of_sym sym)
-  in
-  let make = List.map convert make in
-  AstType.Apply (AstType.Symbol "cons*", make)
+        let recf c = closure_trans_aux c passed_record created_record clsr_ref in
+        let defsym2def = make_defsym2def binds in
+        let record =
+          let make_element x index =
+            let local = ref false in
+            let body = match ClosureRef.reftype clsr_ref x with
+             | LocalBind _ ->
+                 let body = Hashtbl.find defsym2def x in
+                 (match body with
+                  | Lambda _ -> 
+                      local := true; closure_trans_aux body passed_record created_record ClosureRef.empty
+                  | AdmLambda _ -> local := true; closure_trans_aux body passed_record created_record ClosureRef.empty
+                  | _ -> recf body)
+             | PassedClosure (c, idx) -> Select (ClosureSym c, idx)
+             | PassingRecord (s, rsym, idx) -> Ref s
+             | Direct _ -> Ref x
+            in
+            { sym = x; body = body; index = index; local = !local; }
+          in
+          let rec make_record lis idx = match lis with
+            | x :: xs ->
+                let x = make_element x idx in
+                let xs = make_record xs (idx + 1) in
+                x :: xs
+            | [] -> []
+          in
+          let seq = make_record passing 0 in
+          { rsym = rsym; seq = seq }
+        in
+        let largs = {
+          cont_arg = Some k;
+          clo_arg = clsym;
+          args = args;
+          passed_record = passed_record;
+        }
+        in
+        let body = recf body in
+        Lambda (largs, record, body)
+    | CpsType.Branch (p, t1, t2) -> Branch (recf p, recf t1, recf t2)
 
-let ast_of_clo clo = 
-  ast_of_clo_aux clo (CommonSym "`()") "`()"
 
+let closure_trans cps = closure_trans_aux cps [] [] ClosureRef.empty
 
-let rec ast_of_clo_debug_aux clo = match clo with
-  | Apply (a, b, c) -> AstType.Apply (ast_of_clo_debug_aux a, (ast_of_clo_debug_aux b) :: (List.map ast_of_clo_debug_aux c))
-  | Fix (binds, t) -> AstType.Define (List.map clo_bind_debug binds, ast_of_clo_debug_aux t)
-  | Select i -> AstType.Apply (AstType.Symbol "select", [ AstType.Num i ])
+let rec ast_of_clo clo = match clo with
+  | Apply (a, b, c) -> 
+      let a = ast_of_clo a in
+      let b = ast_of_clo b in
+      let c = List.map ast_of_clo c in
+      AstType.Apply (a, b :: c)
+  | Select (s, i) ->
+      let s = Symbol.string_of_sym s in
+      let s = AstType.Symbol s in
+      let i = AstType.Num i in
+      let args = [ s; i ] in
+      AstType.Apply (AstType.Symbol "SELECT", args)
   | Int i -> AstType.Num i
   | Bool b -> AstType.Bool b
-  | Ref sym -> AstType.Symbol (string_of_sym sym)
-  | Branch (a, b, c) -> AstType.Branch (ast_of_clo_debug_aux a, ast_of_clo_debug_aux b, ast_of_clo_debug_aux c)
-  | Lambda (k, _, args, body, _, makes) ->
-      let k = Option.map string_of_sym k in
-      let args = List.map string_of_sym args in
-      let body = ast_of_clo_debug_aux body in
-      let sym2debug m = match m with
-        | (sym, Some (Select i)) -> 
-            let sym = AstType.Symbol (string_of_sym sym) in
-            AstType.Apply (sym, [ AstType.Symbol "is"; AstType.Num i; AstType.Symbol "th value" ])
-        | (sym, None) -> 
-            let sym = AstType.Symbol (string_of_sym sym) in
-            AstType.Apply (sym, [ AstType.Symbol "direct" ])
-        | _ -> raise (Invalid_argument "sym2debug")
-      in
-      let syms = List.map sym2debug makes in
-      let c = "c" ^ (string_of_int (fresh_clo_make ())) in
-      let bind = AstType.Bind { sym = c; def = AstType.Apply (AstType.Symbol "cons*", syms) } in
-      let body = match body with
-        | AstType.Define (bs, t) -> AstType.Define (bind :: bs, t)
-        | _ -> AstType.Define ([ bind ], body)
-      in
-      let args = match k with
-        | Some c -> c :: args
+  | Ref s -> AstType.Symbol (Symbol.string_of_sym s)
+  | Branch (p, t1, t2) ->
+      let p = ast_of_clo p in
+      let t1 = ast_of_clo t1 in
+      let t2 = ast_of_clo t2 in
+      AstType.Branch (p, t1, t2)
+  | Lambda (largs, cr, body) ->
+      let args = List.map Symbol.string_of_sym largs.args in
+      let args = (Symbol.string_of_clsym largs.clo_arg) :: args in
+      let args = match largs.cont_arg with
+        | Some k -> (Symbol.string_of_sym k) :: args
         | None -> args
       in
-      AstType.Lambda (args, body)
-and clo_bind_debug bind = match bind with
-  | Bind { sym = sym; body = body } -> AstType.Bind { sym = sym; def = ast_of_clo_debug_aux body }
-
-let ast_of_clo_debug cps = ast_of_clo_debug_aux (set_select (set_record cps) [] [])
+      let cr = 
+        let bodies = List.map (fun ele -> ast_of_clo ele.body) cr.seq in
+        let bodies = AstType.Apply (AstType.Symbol "MAKE-RECORD", bodies) in
+        let sym = Symbol.string_of_rsym cr.rsym in
+        AstType.Bind { sym = sym; def = bodies }
+      in
+      let body = ast_of_clo body in
+      let binds, body = match body with
+        | AstType.Define (a, b) -> a, b
+        | _ -> [], body
+      in
+      AstType.Lambda (args, AstType.Define (cr :: binds, body))
