@@ -4,6 +4,7 @@
   (modules parser))
   
 (library
+  (libraries util)
   (modules_without_implementation symbolType
                                   astType
                                   cpsType

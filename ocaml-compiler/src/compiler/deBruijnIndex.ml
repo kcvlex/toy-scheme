@@ -1,6 +1,7 @@
 open DeBruijnIndexType
 open Symbol
 open SymbolType
+open Util
 
 (******************** Indexing ********************)
 
