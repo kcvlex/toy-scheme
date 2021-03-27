@@ -8,10 +8,7 @@
   (modules_without_implementation symbolType
                                   astType
                                   cpsType
-                                  aNType
-                                  interlangType
-                                  refType
-                                  closureType)
+                                  aNType)
   (name compiler))
 
 (env
