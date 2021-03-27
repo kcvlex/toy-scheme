@@ -6,7 +6,7 @@ type t =
   | Lambda of string list * string option * t
   | Apply of t * t list
   | Define of bind list * t
-  | Let of bind * t
+  | Let of bind list * t
   | Branch of t * t * t
   | Statement of t list
   | MakeBox of t

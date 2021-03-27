@@ -1,6 +1,7 @@
 (tests
   (libraries compiler)
-  (names testDecompiler 
+  (names testAst
+         testDecompiler 
          testParser))
 (env
   (dev

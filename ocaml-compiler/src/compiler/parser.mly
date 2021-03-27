@@ -4,7 +4,7 @@
 
 %token LAMBDA DEFINE COND ELSE BEGIN LET
 %token LPAREN RPAREN DOT EOF
-%token <int> NUM
+%token <string> NUM
 %token <string> ID
 
 %start root
@@ -20,11 +20,11 @@ expr:
 ;
 
 (* Define *)
-define: LPAREN DEFINE ID expr RPAREN { { sym = $3; def = $4 } };
+define: LPAREN DEFINE ID expr RPAREN expr { Define ([{ sym = $3; def = $4 }], $6) };
 
 (* Binds *)
-binds: LPAREN LET LPAREN list(bind) RPAREN expr RPAREN { Let ($4, $6) };
-bind: LPAREN ID expr RPAREN { { sym = $2; def = $3 } };
+binds: LPAREN LET LPAREN list(bind_one) RPAREN expr RPAREN { Let ($4, $6) };
+bind_one: LPAREN ID expr RPAREN { { sym = $2; def = $3 } };
 
 (* Cond *)
 cond: LPAREN COND cond_aux RPAREN { $3 };
@@ -35,7 +35,7 @@ cond_aux:
 
 (* Lambda *)
 lambda: 
-  | LPAREN LAMBDA args1 expr RPAREN { Lambda ($3, None $4) }
+  | LPAREN LAMBDA args1 expr RPAREN { Lambda ($3, None, $4) }
   | LPAREN LAMBDA args2 expr RPAREN { Lambda ((fst $3), (snd $3), $4) }
   | LPAREN LAMBDA ID expr RPAREN { Lambda ([], Some $3, $4) }
 ;
@@ -50,7 +50,7 @@ apply: LPAREN expr list(expr) RPAREN { Apply ($2, $3) };
 
 (* Atom *)
 atom:
-  | NUM { Num $1 }
+  | NUM { Num (int_of_string $1) }
   | ID {
     match $1 with
       | "+" | "-" | "*" | "/" | "eq?" | "set!" | "<" -> Primitive $1

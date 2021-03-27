@@ -1,5 +1,4 @@
 open CpsType
-open Symbol
 open SymbolType
 open Util
 
@@ -10,7 +9,7 @@ module SymMap = Map.Make(Symbol)
 
 let replace_if_adm sym d map = match sym with
   | ContSym _ | ParamSym _ ->
-      let v = SymMap.find sym in
+      let v = SymMap.find sym map in
       Some (d - v)
   | _ -> None
 
@@ -22,12 +21,12 @@ let rec indexing_aux cps d map =
   let recf c = indexing_aux c d map in
   match cps with
     | AdmLambda (s, t) ->
-        let map d = add_if_adm s d map in
-        AdmLambda (s, indexing_of_cps t d map)
+        let map, d = add_if_adm s d map in
+        AdmLambda (s, indexing_aux t d map)
     | Lambda (k, args, larg, body) ->
         (* FIXME *)
         let larg_f = if Option.is_some larg then 1 else 0 in
-        let map _ = add_if_adm k d map in
+        let map, _ = add_if_adm k d map in
         let d = d + (List.length args) + larg_f in
         Lambda (k, args, larg, indexing_aux body d map)
     | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
@@ -52,7 +51,7 @@ let replace_term target expr =
       | AdmLambda (sym, body) -> AdmLambda (sym, replace_aux body (depth + 1))
       | Lambda (k, args, larg, body) ->
           let add = (List.length args) + 1 + (if Option.is_some larg then 1 else 0) in
-          Lambda (k, args, larg, replace_aux body (depth + add) add)
+          Lambda (k, args, larg, replace_aux body (depth + add))
       | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
       | Passing (a, b) -> Passing (recf a, recf b)
       | Let ((x, t), body) -> Let ((x, recf t), recf body)
@@ -60,7 +59,7 @@ let replace_term target expr =
       | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
       | RefIndex i when depth = i -> fix_index expr depth (-1)  (* replace *)
       | RefIndex i when depth < i -> RefIndex (i - 1)           (* -1 means the reduction *)
-      | _ -> cps)
+      | _ -> target)
     and fix_index expr depth_when_replaced depth =
       let recf x = fix_index x depth_when_replaced depth in
       (match expr with
@@ -76,7 +75,7 @@ let replace_term target expr =
         | RefIndex i when depth < i -> RefIndex (depth_when_replaced + i)
         | _ -> expr)
   in
-  replace_aux cps 0
+  replace_aux target 0
 
 let beta_step cps = 
   let update = ref false in
@@ -100,7 +99,7 @@ let beta_step cps =
   (cps, !update)
 
 let rec beta_reduction cps =
-  let cps updated = beta_step cps in
+  let cps, updated = beta_step cps in
   if updated then beta_reduction cps else cps
 
 
@@ -114,18 +113,18 @@ let restore_indexing cps =
     | AdmLambda (k, t) ->
         add_arg k;
         let res = AdmLambda (k, restore_aux t) in
-        rm_arg 1; res
+        rm_args 1; res
     | Lambda (k, args, larg, body) ->
         add_arg k;
         List.iter add_arg args;
-        Option.may add_arg larg;
+        Option.iter add_arg larg;
         let body = restore_aux body in
         let len = (List.length args) + 1 + (if Option.is_some larg then 1 else 0) in
         rm_args len; Lambda (k, args, larg, body)
     | ApplyFunc (a, b, c) ->
         let a = restore_aux a in
         let b = restore_aux b in
-        let c = restore_aux c in
+        let c = List.map restore_aux c in
         ApplyFunc (a, b, c)
     | Passing (a, b) ->
         let a = restore_aux a in
@@ -134,7 +133,7 @@ let restore_indexing cps =
     | Let ((x, t), body) ->
         let t = restore_aux t in
         let body = restore_aux body in
-        Lst ((x, t), body)
+        Let ((x, t), body)
     | MakeBox t -> MakeBox (restore_aux t)
     | Branch (a, b, c) ->
         let a = restore_aux a in
@@ -142,6 +141,7 @@ let restore_indexing cps =
         let c = restore_aux c in
         Branch (a, b, c)
     | RefIndex i -> RefDirect (Vector.rget args i)
+    | _ -> cps
   in
   restore_aux cps
 

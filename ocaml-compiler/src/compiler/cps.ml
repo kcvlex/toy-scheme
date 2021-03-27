@@ -1,27 +1,28 @@
 open SymbolType
 open Symbol
 open CpsType
-open AstType
 
 let cont_id_slot = SlotNumber.make (fun x -> ContSym (Cont x))
 let cont_param_slot = SlotNumber.make (fun x -> ParamSym x)
 
 let make_cps_value value =
   let k = SlotNumber.fresh cont_id_slot in
-  AdmLambda (k, Passing (Ref k, value))
+  AdmLambda (k, Passing (RefDirect k, value))
 
-let rec cps_trans_aux ast = match ast with
-  | Num n -> make_cps_value (Int n)
-  | Bool b -> make_cps_value (Bool b)
-  | Primitive s -> RefDirect (Primitive ("cps-" ^ s))
-  | Symbol s -> RefDirect (Symbol s)
-  | Lambda (args, larg, body) ->
+let decompose_bind (b: AstType.bind) = (b.sym, b.def)
+
+let rec cps_trans ast = match ast with
+  | AstType.Num n -> make_cps_value (Int n)
+  | AstType.Bool b -> make_cps_value (Bool b)
+  | AstType.Primitive s -> RefDirect (Primitive ("cps-" ^ s))
+  | AstType.Symbol s -> RefDirect (CommonSym s)
+  | AstType.Lambda (args, larg, body) ->
       let k = SlotNumber.fresh cont_id_slot in
       let args = List.map (fun x -> CommonSym x) args in
       let larg = Option.map (fun x -> CommonSym x) larg in
       let body = cps_trans body in
       make_cps_value (Lambda (k, args, larg, Passing (body, RefDirect k)))
-  | Apply (f, args) ->
+  | AstType.Apply (f, args) ->
       let merge_args body params cps_lis =
         let merge cps param body = Passing (cps, AdmLambda (param, body)) in
         let body = List.fold_right2 merge cps_lis params body in
@@ -41,8 +42,8 @@ let rec cps_trans_aux ast = match ast with
             merge_args body (t :: params) (f :: args))
       in
       AdmLambda (k, merged)
-  | Define _ -> raise (Invalid_argument "Define must be removed")
-  | Let (blis, body) ->
+  | AstType.Define _ -> raise (Invalid_argument "Define must be removed")
+  | AstType.Let (blis, body) ->
       let k = SlotNumber.fresh cont_id_slot in
       let body =
         body |> cps_trans
@@ -51,16 +52,16 @@ let rec cps_trans_aux ast = match ast with
       let rec fn lis = match lis with
         | [] -> Passing (body, RefDirect k)
         | x :: xs ->
-            let { sym; def } = x in
+            let sym, def = decompose_bind x in
             let body = cps_trans def in
             let t = SlotNumber.fresh cont_param_slot in
             let xs = fn xs in
-            xs |> Let ((sym, RefDirect t), xs)
-               |> fun x -> AdmLambda (t, x)
-               |> fun x -> Passing (body, x)
+            xs |> fun xs -> Let ((sym, RefDirect t), xs)
+               |> fun xs -> AdmLambda (t, xs)
+               |> fun xs -> Passing (body, xs)
       in
       AdmLambda (k, fn blis)
-  | Branch (p, t1, t2) ->
+  | AstType.Branch (p, t1, t2) ->
       let k = SlotNumber.fresh cont_id_slot in
       let t = SlotNumber.fresh cont_param_slot in
       let p = cps_trans p in
@@ -70,40 +71,41 @@ let rec cps_trans_aux ast = match ast with
       res |> fun x -> AdmLambda (t, x)
           |> fun x -> Passing (p, x)
           |> fun x -> AdmLambda (k, x)
-  | Statement l ->
-      let merge a b = Passing (a, AdmLambda (RefDirect (CommonSym "_"), b) in
+  | AstType.Statement l ->
+      let merge a b = Passing (a, AdmLambda (CommonSym "_", b)) in
       let k = SlotNumber.fresh cont_id_slot in
       let body =
         l |> List.map cps_trans
           |> fun x -> List.fold_right merge x (RefDirect k)
       in
       AdmLambda (k, body)
-  | RefBox s -> RefBox s
-  | MakeBox t -> MakeBox (cps_trans t)
+  | AstType.RefBox s -> RefBox (CommonSym s)
+  | AstType.MakeBox t -> MakeBox (cps_trans t)
 
 let rec ast_of_cps cps = match cps with 
-  | Int i -> Num i
-  | Bool b -> Bool b
+  | Int i -> AstType.Num i
+  | Bool b -> AstType.Bool b
   | AdmLambda (k, body) ->
       let k = string_of_sym k in
-      let body = ast_of_cps in
-      Lambda ([ k ], None, body)
+      let body = ast_of_cps body in
+      AstType.Lambda ([ k ], None, body)
   | Lambda (k, args, larg, body) ->
       let k = string_of_sym k in
       let args = List.map string_of_sym args in
       let larg = Option.map string_of_sym larg in
       let body = ast_of_cps body in
-      Lambda (k :: args, larg, body)
+      AstType.Lambda (k :: args, larg, body)
   | ApplyFunc (f, k, args) ->
       let f = ast_of_cps f in
       let args = List.map ast_of_cps (k :: args) in
-      Apply (f, args)
-  | Passing (f, k) -> Apply (ast_of_cps f, [ ast_of_cps k ])
+      AstType.Apply (f, args)
+  | Passing (f, k) -> AstType.Apply (ast_of_cps f, [ ast_of_cps k ])
   | Let ((s, t), body) ->
       let t = ast_of_cps t in
       let body = ast_of_cps body in
-      Let ([ { sym = s; def = t } ], body)
-  | RefDirect s -> Symbol (string_of_sym s)
-  | RefBox s -> RefBox (string_of_sym s)
-  | MakeBox t -> MakeBox (ast_of_cps t)
-  | Branch (a, b, c) -> Branch (ast_of_cps a, ast_of_cps b, ast_of_cps c)
+      AstType.Let ([ { sym = s; def = t } ], body)
+  | RefDirect s -> AstType.Symbol (string_of_sym s)
+  | RefBox s -> AstType.RefBox (string_of_sym s)
+  | MakeBox t -> AstType.MakeBox (ast_of_cps t)
+  | Branch (a, b, c) -> AstType.Branch (ast_of_cps a, ast_of_cps b, ast_of_cps c)
+  | _ -> raise (Invalid_argument "AAA")
