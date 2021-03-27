@@ -28,7 +28,7 @@ let rec code_of_ast ast =
                     |> sur_paren
     | Define (bl, body) ->
         let f b =
-          let { sym = s; def = t } = b in
+          let s, t = b in
           let t = code_of_ast t in
           "(define " ^ s ^ " " ^ t ^ ")"
         in
@@ -40,7 +40,7 @@ let rec code_of_ast ast =
         bl ^ " " ^ body
     | Let (bl, body) ->
         let f b =
-          let { sym = s; def = t } = b in
+          let s, t = b in
           let t = code_of_ast t in
           sur_paren (s ^ " " ^ t)
         in
@@ -61,10 +61,6 @@ let rec code_of_ast ast =
             |> String.concat " "
         in
         "(begin " ^ s ^ ")"
-    | MakeBox t ->
-        let t = code_of_ast t in
-        "(list " ^ t ^ ")"
-    | RefBox s -> "(list-ref " ^ s ^ " 0)"
 
 let rename =
   let sl = SlotNumber.make (fun x -> "__user" ^ (string_of_int x) ^ "_") in
@@ -85,7 +81,10 @@ let rec alpha_trans_aux ast symmap =
     add_defs map bsyms renames
   in
   let trans_binds binds map =
-    let fb b = { sym = SymMap.find b.sym map; def = alpha_trans_aux b.def map } in
+    let fb b = 
+      let s, t = b in
+      (SymMap.find s map, alpha_trans_aux t map)
+    in
     List.map fb binds
   in
   match ast with
@@ -139,18 +138,16 @@ let y_star_body =
 
 let rec re_bind binds idx l = match binds with
   | x :: xs ->
-      let x = { 
-        sym = x.sym; 
-        def = Apply (Symbol "list-ref", [ l; Num idx ]);
-      } in
+      let s, t = x in
+      let t = Apply (Symbol "list-ref", [ l; Num idx ]) in
       let xs = re_bind xs (idx + 1) l in
-      x :: xs
+      (s, t) :: xs
   | [] -> []
 
 let rec flat_defs ast = 
   let f b =
-    let { sym = s; def = t } = b in
-    { sym = s; def =flat_defs t }
+    let s, t = b in
+    (s, flat_defs t)
   in
   match ast with
     | Define (b1, Define (b2, body)) ->
@@ -194,7 +191,7 @@ let rec remove_define ast symmap =
           in
           (re_bind lambdas 0 (Symbol lsym), rm_rec)
         in
-        let values = List.map (fun x -> { sym = x.sym; def = remove_define x.def symmap }) values in
+        let values = List.map (fun x -> (fst x, remove_define (snd x) symmap)) values in
         let binds = List.append lambdas values in
         let body = remove_define body symmap in
         let res = Let (binds, body) in
@@ -208,55 +205,8 @@ let rec remove_define ast symmap =
     | _ -> ast
 
 
-let collect_assigned ast =
-  let tbl = Hashtbl.create 8 in
-  let rec fn ast = match ast with
-    | Let (bl, body) ->
-        let fr b =
-          let { sym = _; def = t } = b in
-          fn t
-        in
-        List.iter fr bl; fn body
-    | Apply (f, args) ->
-        (match f with
-          | Primitive "set!" ->
-              let hd = List.hd args in
-              (match hd with
-                | Symbol s -> Hashtbl.add tbl s ()
-                | _ -> raise (Invalid_argument "hd must be symbol"))
-          | _ -> ());
-        fn f;
-        List.iter fn args
-    | Lambda (_, _, body) -> fn body
-    | Branch (a, b, c) -> fn a; fn b; fn c
-    | Statement l -> List.iter fn l
-    | _ -> ()
-  in
-  fn ast; tbl
-
-let boxing ast =
-  let tbl = collect_assigned ast in
-  let rec fn ast = match ast with
-    | Let (bl, body) ->
-        let fr b =
-          let { sym = s; def = t } = b in
-          let t = fn t in
-          let s, t = if Hashtbl.mem tbl s then (s, MakeBox t) else (s, t) in
-          { sym = s; def = t }
-        in
-        Let (List.map fr bl, fn body)
-    | Apply (f, args) -> Apply (fn f, List.map fn args)
-    | Lambda (a, b, body) -> Lambda (a, b, fn body)
-    | Branch (a, b, c) -> Branch (fn a, fn b, fn c)
-    | Statement l -> Statement (List.map fn l)
-    | Symbol s -> if Hashtbl.mem tbl s then RefBox s else Symbol s
-    | _ -> ast
-  in
-  fn ast
-
 let normalize ast =
   ast |> alpha_trans
       |> flat_defs
       |> fun x -> remove_define x SymMap.empty
-      |> boxing
-      |> fun x -> Let ([{ sym = y_star; def = y_star_body }], x)
+      |> fun x -> Let ([( y_star, y_star_body )], x)

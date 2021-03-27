@@ -9,9 +9,4 @@ type t =
   | Let of bind list * t
   | Branch of t * t * t
   | Statement of t list
-  | MakeBox of t
-  | RefBox of string
-and bind = { 
-  sym : string; 
-  def : t;
-}
+and bind = string * t 

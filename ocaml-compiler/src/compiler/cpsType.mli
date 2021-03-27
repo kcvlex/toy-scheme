@@ -6,8 +6,6 @@ type t =
   | ApplyFunc of t * t * t list
   | Passing of t * t
   | Let of (string * t) * t
-  | RefDirect of SymbolType.t
-  | RefBox of SymbolType.t
-  | MakeBox of t
+  | Ref of SymbolType.t
   | Branch of t * t * t
   | RefIndex of int

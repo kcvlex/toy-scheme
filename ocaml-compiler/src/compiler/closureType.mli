@@ -1,8 +1,9 @@
 type t =
-  | Apply of t * t * t list
-  | Select of SymbolType.t * int
   | Int of int
   | Bool of bool
+  | Apply of t * t * t list
+  | Select of SymbolTYpe.t * int
+  | Select of SymbolType.t * int
   | Ref of SymbolType.t
   | Branch of t * t * t
   | Lambda of lambda_args * closure_record * t
