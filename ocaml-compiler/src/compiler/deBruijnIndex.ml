@@ -3,8 +3,8 @@ open Symbol
 open SymbolType
 open Util
 
-(******************** Indexing ********************)
 
+(******************** Indexing ********************)
 let sym2key sym = match sym with
   | ContSym (Cont n) -> Some (n * 2)
   | ParamSym n -> Some (n * 2 + 1)
@@ -12,7 +12,7 @@ let sym2key sym = match sym with
 
 module AdmVarMap = Map.Make(Int)
 
-let replace_if_adm sym d var2index = 
+let replace_if_adm sym d var2index =
   let key = sym2key sym in
   match key with
     | Some k -> 

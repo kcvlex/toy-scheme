@@ -1,62 +1,152 @@
-open DeBruijnIndexType
+open CpsType
+open Symbol
+open SymbolType
+open Util
 
-let replace_term dbi_cps assign =
-  let rec replace_aux cps adv =
-    let recf x = replace_aux x adv in
-    (match cps with
-      | AdmLambda (sym, body) -> AdmLambda (sym, replace_aux body (adv + 1))
+module SymMap = Map.Make(Symbol)
+
+
+(********** Indexing **********)
+
+let replace_if_adm sym d map = match sym with
+  | ContSym _ | ParamSym _ ->
+      let v = SymMap.find sym in
+      Some (d - v)
+  | _ -> None
+
+let add_if_adm sym d map = match sym with
+  | ContSym _ | ParamSym _ -> (SymMap.add sym (d + 1) map, d + 1)
+  | _ -> (map, d + 1)
+
+let rec indexing_aux cps d map =
+  let recf c = indexing_aux c d map in
+  match cps with
+    | AdmLambda (s, t) ->
+        let map d = add_if_adm s d map in
+        AdmLambda (s, indexing_of_cps t d map)
+    | Lambda (k, args, larg, body) ->
+        (* FIXME *)
+        let larg_f = if Option.is_some larg then 1 else 0 in
+        let map _ = add_if_adm k d map in
+        let d = d + (List.length args) + larg_f in
+        Lambda (k, args, larg, indexing_aux body d map)
+    | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
+    | Passing (f, k) ->  Passing (recf f, recf k)
+    | Let ((s, x), body) -> Let ((s, recf x), recf body)
+    | RefDirect s -> (match replace_if_adm s d map with
+      | Some d -> RefIndex d
+      | None -> RefDirect s)
+    | MakeBox t -> MakeBox (recf t)
+    | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
+    | _ -> cps
+
+let de_bruijn_indexing cps = indexing_aux cps (-1) SymMap.empty
+
+
+(********** Beta reduction **********)
+
+let replace_term target expr =
+  let rec replace_aux target depth =
+    let recf x = replace_aux x depth in
+    (match target with
+      | AdmLambda (sym, body) -> AdmLambda (sym, replace_aux body (depth + 1))
+      | Lambda (k, args, larg, body) ->
+          let add = (List.length args) + 1 + (if Option.is_some larg then 1 else 0) in
+          Lambda (k, args, larg, replace_aux body (depth + add) add)
       | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
       | Passing (a, b) -> Passing (recf a, recf b)
-      | Fix (flis, body) -> Fix (List.map (fun x -> replace_fix x adv) flis, recf body)
-      | RefIndex i when i = adv -> (fix_pos assign adv (-1))
-      | RefIndex i when adv < i -> RefIndex (i - 1)
-      | Lambda (sym, syms, t, len) -> Lambda (sym, syms, replace_aux t (adv + len), len)
-      | Branch (p, t1, t2) -> Branch (recf p, recf t1, recf t2)
+      | Let ((x, t), body) -> Let ((x, recf t), recf body)
+      | MakeBox t -> MakeBox (recf t)
+      | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
+      | RefIndex i when depth = i -> fix_index expr depth (-1)  (* replace *)
+      | RefIndex i when depth < i -> RefIndex (i - 1)           (* -1 means the reduction *)
       | _ -> cps)
-  and fix_pos assign adv_when_replaced adv =
-    let recf x = fix_pos x adv_when_replaced adv in
-    let fix_fpos fix = (match fix with
-      | Bind { sym = sym; body = body; } ->
-          Bind { sym = sym; body = recf body; })
-    in
-    (match assign with
-      | AdmLambda (sym, body) -> AdmLambda (sym, fix_pos body adv_when_replaced (adv + 1))
-      | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
-      | Passing (a, b) -> Passing (recf a, recf b)
-      | Fix (flis, body) -> Fix (List.map fix_fpos flis, recf body)
-      | RefIndex i when adv < i -> RefIndex (adv_when_replaced + i)
-      | Lambda (sym, syms, t, len) -> Lambda (sym, syms, fix_pos t adv_when_replaced (adv + len), len)
-      | Branch (p, t1, t2) -> Branch (recf p, recf t1, recf t2)
-      | _ -> assign)
-  and replace_fix fix adv = (match fix with
-    | Bind { sym = sym; body = body; } ->
-        Bind { sym = sym; body = replace_aux body adv; })
+    and fix_index expr depth_when_replaced depth =
+      let recf x = fix_index x depth_when_replaced depth in
+      (match expr with
+        | AdmLambda (sym, body) -> AdmLambda (sym, fix_index body depth_when_replaced (depth + 1))
+        | Lambda (k, args, larg, body) ->
+          let add = (List.length args) + 1 + (if Option.is_some larg then 1 else 0) in
+          Lambda (k, args, larg, fix_index body depth_when_replaced (depth + add))
+        | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
+        | Passing (a, b) -> Passing (recf a, recf b)
+        | Let ((x, t), body) -> Let ((x, recf t), recf body)
+        | MakeBox t -> MakeBox (recf t)
+        | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
+        | RefIndex i when depth < i -> RefIndex (depth_when_replaced + i)
+        | _ -> expr)
   in
-  replace_aux dbi_cps 0
+  replace_aux cps 0
 
-let beta_step dbi_cps = 
+let beta_step cps = 
   let update = ref false in
-  let rec beta_step_aux dbi_cps depth = 
-    let beta_rec0 cps = beta_step_aux cps depth in
-    let beta_rec1 cps = beta_step_aux cps (depth + 1) in
-    let beta_fix fix = (match fix with
-      | Bind { sym = sym; body = body; } -> 
-          Bind { sym = sym; body = beta_rec0 body; })
-    in
-    match dbi_cps with
-      | Passing (AdmLambda (_, p), t) -> update := true; replace_term p t
-      | AdmLambda (sym, t) -> AdmLambda (sym, beta_rec1 t)
-      | ApplyFunc (f, k, args) -> 
-          ApplyFunc (beta_rec0 f, beta_rec0 k, List.map beta_rec0 args)
-      | Passing (a, b) -> Passing (beta_rec0 a, beta_rec0 b)
-      | Fix (flis, body) -> Fix (List.map beta_fix flis, beta_rec0 body)
-      | Lambda (k, args, body, len) -> Lambda (k, args, beta_step_aux body (depth + len), len)
-      | Branch (p, t1, t2) -> Branch (beta_rec0 p, beta_rec0 t1, beta_rec0 t2)
-      | _ -> dbi_cps
+  let rec beta_step_aux cps depth =
+    let beta0 c = beta_step_aux c depth in
+    let beta1 c = beta_step_aux c (depth + 1) in
+    match cps with
+      | AdmLambda (k, t) -> AdmLambda (k, beta1 t)
+      | Lambda (k, args, larg, body) ->
+          let add = (List.length args) + 1 + (if Option.is_some larg then 1 else 0) in
+          Lambda (k, args, larg, beta_step_aux body (depth + add))
+      | ApplyFunc (f, k, args) -> ApplyFunc (beta0 f, beta0 k, List.map beta0 args)
+      | Passing (AdmLambda (_, body), x) -> update := true; replace_term body x
+      | Passing (a, b) -> Passing (beta0 a, beta0 b)
+      | Let ((x, t), body) -> Let ((x, beta0 t), beta0 body)
+      | MakeBox t -> MakeBox (beta0 t)
+      | Branch (a, b, c) -> Branch (beta0 a, beta0 b, beta0 c)
+      | _ -> cps
   in
-  let res = beta_step_aux dbi_cps 0 in
-  (res, !update)
+  let cps = beta_step_aux cps 0 in
+  (cps, !update)
 
-let rec beta_trans dbi_cps =
-  let res = beta_step dbi_cps in
-  if snd res then beta_trans (fst res) else (fst res)
+let rec beta_reduction cps =
+  let cps updated = beta_step cps in
+  if updated then beta_reduction cps else cps
+
+
+(********** Restore Indexing **********)
+
+let restore_indexing cps =
+  let args = Vector.empty () in
+  let add_arg arg = Vector.push_back args arg in
+  let rm_args n = Vector.pops args n in
+  let rec restore_aux cps = match cps with
+    | AdmLambda (k, t) ->
+        add_arg k;
+        let res = AdmLambda (k, restore_aux t) in
+        rm_arg 1; res
+    | Lambda (k, args, larg, body) ->
+        add_arg k;
+        List.iter add_arg args;
+        Option.may add_arg larg;
+        let body = restore_aux body in
+        let len = (List.length args) + 1 + (if Option.is_some larg then 1 else 0) in
+        rm_args len; Lambda (k, args, larg, body)
+    | ApplyFunc (a, b, c) ->
+        let a = restore_aux a in
+        let b = restore_aux b in
+        let c = restore_aux c in
+        ApplyFunc (a, b, c)
+    | Passing (a, b) ->
+        let a = restore_aux a in
+        let b = restore_aux b in
+        Passing (a, b)
+    | Let ((x, t), body) ->
+        let t = restore_aux t in
+        let body = restore_aux body in
+        Lst ((x, t), body)
+    | MakeBox t -> MakeBox (restore_aux t)
+    | Branch (a, b, c) ->
+        let a = restore_aux a in
+        let b = restore_aux b in
+        let c = restore_aux c in
+        Branch (a, b, c)
+    | RefIndex i -> RefDirect (Vector.rget args i)
+  in
+  restore_aux cps
+
+
+let normalize cps =
+  cps |> de_bruijn_indexing
+      |> beta_reduction 
+      |> restore_indexing

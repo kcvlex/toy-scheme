@@ -2,9 +2,16 @@ type t =
   | Num of int
   | Bool of bool
   | Symbol of string
-  | Lambda of string list * t
+  | Primitive of string
+  | Lambda of string list * string option * t
   | Apply of t * t list
   | Define of bind list * t
+  | Let of bind * t
   | Branch of t * t * t
   | Statement of t list
-and bind = Bind of { sym : string; def : t; }
+  | MakeBox of t
+  | RefBox of string
+and bind = { 
+  sym : string; 
+  def : t;
+}

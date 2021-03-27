@@ -1,1 +1,1 @@
-val beta_trans : DeBruijnIndexType.t -> DeBruijnIndexType.t
+val beta_reduction : CpsType.t -> CpsType.t
