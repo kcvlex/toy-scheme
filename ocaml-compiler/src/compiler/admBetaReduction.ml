@@ -27,15 +27,14 @@ let rec indexing_aux cps d map =
         (* FIXME *)
         let larg_f = if Option.is_some larg then 1 else 0 in
         let map, _ = add_if_adm k d map in
-        let d = d + (List.length args) + larg_f in
+        let d = d + (List.length args) + 1 + larg_f in
         Lambda (k, args, larg, indexing_aux body d map)
     | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
     | Passing (f, k) ->  Passing (recf f, recf k)
     | Let ((s, x), body) -> Let ((s, recf x), recf body)
-    | RefDirect s -> (match replace_if_adm s d map with
+    | Ref s -> (match replace_if_adm s d map with
       | Some d -> RefIndex d
-      | None -> RefDirect s)
-    | MakeBox t -> MakeBox (recf t)
+      | None -> Ref s)
     | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
     | _ -> cps
 
@@ -55,7 +54,6 @@ let replace_term target expr =
       | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
       | Passing (a, b) -> Passing (recf a, recf b)
       | Let ((x, t), body) -> Let ((x, recf t), recf body)
-      | MakeBox t -> MakeBox (recf t)
       | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
       | RefIndex i when depth = i -> fix_index expr depth (-1)  (* replace *)
       | RefIndex i when depth < i -> RefIndex (i - 1)           (* -1 means the reduction *)
@@ -70,7 +68,6 @@ let replace_term target expr =
         | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
         | Passing (a, b) -> Passing (recf a, recf b)
         | Let ((x, t), body) -> Let ((x, recf t), recf body)
-        | MakeBox t -> MakeBox (recf t)
         | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
         | RefIndex i when depth < i -> RefIndex (depth_when_replaced + i)
         | _ -> expr)
@@ -91,7 +88,6 @@ let beta_step cps =
       | Passing (AdmLambda (_, body), x) -> update := true; replace_term body x
       | Passing (a, b) -> Passing (beta0 a, beta0 b)
       | Let ((x, t), body) -> Let ((x, beta0 t), beta0 body)
-      | MakeBox t -> MakeBox (beta0 t)
       | Branch (a, b, c) -> Branch (beta0 a, beta0 b, beta0 c)
       | _ -> cps
   in
@@ -134,13 +130,12 @@ let restore_indexing cps =
         let t = restore_aux t in
         let body = restore_aux body in
         Let ((x, t), body)
-    | MakeBox t -> MakeBox (restore_aux t)
     | Branch (a, b, c) ->
         let a = restore_aux a in
         let b = restore_aux b in
         let c = restore_aux c in
         Branch (a, b, c)
-    | RefIndex i -> RefDirect (Vector.rget args i)
+    | RefIndex i -> Ref (Vector.rget args i)
     | _ -> cps
   in
   restore_aux cps

@@ -23,7 +23,6 @@ let () =
   let ast = Cps.ast_of_cps cps in
   let code = Ast.code_of_ast ast in
   print_label "CPS"; print_endline code
-*)
 
 let () =
   let ast = make_ast source2 in
@@ -40,3 +39,4 @@ let () =
         let code = call_func ^ display_func ^ code in
         print_label "Decompiled"; print_endline code
     | _ -> raise (Invalid_argument "decompiled must be `Define`")
+*)

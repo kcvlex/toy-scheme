@@ -9,7 +9,7 @@ let rec a_normalize cps = match cps with
   | CpsType.Int i -> Term (Int i)
   | CpsType.Bool b -> Term (Bool b)
   | CpsType.AdmLambda (k, body) -> a_normalize (CpsType.Lambda (k, [], None, body))
-  | CpsType.Lambda (k, args, larg, body) ->
+  | CpsType.Lambda (_, args, larg, body) ->
       let args = List.map string_of_sym args in
       let larg = Option.map string_of_sym larg in
       Term (Lambda (args, larg, a_normalize body))
@@ -22,14 +22,14 @@ let rec a_normalize cps = match cps with
       (match k with
         | CpsType.Ref _ -> TailCall (f, args)
         | CpsType.AdmLambda (k, body) ->
-            Call ((string_of_sym k, f, args), a_nomalize body)
+            Call ((string_of_sym k, f, args), a_normalize body)
         | CpsType.Lambda (k, lambda_args, lambda_larg, body) ->
             (* FIXME : unreachable ?? *)
             let k = string_of_sym k in
             let lambda_args = List.map string_of_sym lambda_args in
-            let lambda_larg = Option.map string_of_sym larg in
+            let lambda_larg = Option.map string_of_sym lambda_larg in
             let body = a_normalize body in
-            Call ((k, f, args), Lambda (lambda_args, lambda_larg, body))
+            Call ((k, f, args), Term (Lambda (lambda_args, lambda_larg, body)))
         | _ -> raise (Invalid_argument "BBB"))
   | CpsType.Passing (a, b) -> (match a with
     | CpsType.Ref _ -> a_normalize b
@@ -37,7 +37,7 @@ let rec a_normalize cps = match cps with
   | CpsType.Let ((s, t), body) -> 
       let t = t |> a_normalize |> extract_term in
       Bind ((s, t), a_normalize body)
-  | CpsType.Ref s -> Term (Ref string_of_sym s)
+  | CpsType.Ref s -> Term (Ref (string_of_sym s))
   | CpsType.Branch (a, b, c) ->
       let a = a |> a_normalize |> extract_term in
       let b = a_normalize b in

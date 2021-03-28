@@ -9,11 +9,28 @@ let make_cps_value value =
   let k = SlotNumber.fresh cont_id_slot in
   AdmLambda (k, Passing (Ref k, value))
 
+let replace_primitive s = match s with
+  | "+" -> "cps-add"
+  | "-" -> "cps-sub"
+  | "*" -> "cps-mul"
+  | "/" -> "cps-div"
+  | "<" -> "cps-less"
+  | "cons" -> "cps-cons"
+  | "car" -> "cps-car"
+  | "cdr" -> "cps-cdr"
+  | "null?" -> "cps-null?"
+  | "eq?" -> "cps-eq?"
+  | "apply" -> "cps-apply"
+  | "list-ref" -> "cps-list-ref"
+  | _ -> raise (Invalid_argument s)
+
 let rec cps_trans ast = match ast with
   | AstType.Num n -> make_cps_value (Int n)
   | AstType.Bool b -> make_cps_value (Bool b)
-  | AstType.Primitive s -> Ref (Primitive ("cps-" ^ s))
-  | AstType.Symbol s -> Ref (CommonSym s)
+  | AstType.Primitive s -> Ref (Primitive (replace_primitive s))
+  | AstType.Symbol s -> make_cps_value (Ref (CommonSym s))
+  | AstType.Nil -> make_cps_value (Nil)
+  | AstType.Quote q -> make_cps_value (Quote q)
   | AstType.Lambda (args, larg, body) ->
       let k = SlotNumber.fresh cont_id_slot in
       let args = List.map (fun x -> CommonSym x) args in
@@ -23,8 +40,7 @@ let rec cps_trans ast = match ast with
   | AstType.Apply (f, args) ->
       let merge_args body params cps_lis =
         let merge cps param body = Passing (cps, AdmLambda (param, body)) in
-        let body = List.fold_right2 merge cps_lis params body in
-        body
+        List.fold_right2 merge cps_lis params body
       in
       let k = SlotNumber.fresh cont_id_slot in
       let f = cps_trans f in
@@ -42,23 +58,21 @@ let rec cps_trans ast = match ast with
       AdmLambda (k, merged)
   | AstType.Define _ -> raise (Invalid_argument "Define must be removed")
   | AstType.Let (blis, body) ->
-      let k = SlotNumber.fresh cont_id_slot in
-      let body =
-        body |> cps_trans
-             |> fun x -> Passing (x, Ref k)
-      in
       let rec fn lis = match lis with
-        | [] -> Passing (body, Ref k)
+        | [] -> cps_trans body
         | x :: xs ->
             let sym, def = x in
             let body = cps_trans def in
+            let k = SlotNumber.fresh cont_id_slot in
             let t = SlotNumber.fresh cont_param_slot in
             let xs = fn xs in
-            xs |> fun xs -> Let ((sym, Ref t), xs)
-               |> fun xs -> AdmLambda (t, xs)
-               |> fun xs -> Passing (body, xs)
+            xs |> fun a -> Passing (a, Ref k)
+               |> fun a -> Let ((sym, Ref t), a)
+               |> fun a -> AdmLambda (t, a)
+               |> fun a -> Passing (body, a)
+               |> fun a -> AdmLambda (k, a)
       in
-      AdmLambda (k, fn blis)
+      fn blis
   | AstType.Branch (p, t1, t2) ->
       let k = SlotNumber.fresh cont_id_slot in
       let t = SlotNumber.fresh cont_param_slot in
@@ -70,6 +84,7 @@ let rec cps_trans ast = match ast with
           |> fun x -> Passing (p, x)
           |> fun x -> AdmLambda (k, x)
   | AstType.Statement l ->
+      (* FIXME *)
       let merge a b = Passing (a, AdmLambda (CommonSym "_", b)) in
       let k = SlotNumber.fresh cont_id_slot in
       let body =
@@ -81,6 +96,8 @@ let rec cps_trans ast = match ast with
 let rec ast_of_cps cps = match cps with 
   | Int i -> AstType.Num i
   | Bool b -> AstType.Bool b
+  | Nil -> AstType.Nil
+  | Quote q -> AstType.Quote q
   | AdmLambda (k, body) ->
       let k = string_of_sym k in
       let body = ast_of_cps body in

@@ -1,15 +1,34 @@
 open AstType
 
 module SymMap = Map.Make(String)
+
+let y_star = "Y-star"
+let y_star_body =
+  "(lambda l \
+     ((lambda (u) (u u)) \
+      (lambda (p) \
+        (map (lambda (li) (lambda x (apply (apply li (p p)) x))) l))))"
+
+let open_map = "open-map"
+let open_map_body =
+  "(lambda (rec f l) \
+     (if (null? l) \
+         `() \
+          (cons (f (car l)) (rec rec f (cdr l)))))"
+
+let map = "map"
+let map_body = "(lambda (f l) (open-map open-map f l))"
   
 let rec code_of_ast ast =
-  let make_lambda args body = "(lambda " ^ args ^ body ^ ")" in
+  let make_lambda args body = "(lambda " ^ args ^ " " ^ body ^ ")" in
   let sur_paren s = "(" ^ s ^ ")" in
   match ast with
     | Num i -> string_of_int i
     | Bool true -> "#t"
     | Bool false -> "#f"
     | Symbol s -> s
+    | Nil -> "()"
+    | Quote s -> "`" ^ (code_of_ast s)
     | Primitive s -> s
     | Lambda ([], None, body) -> make_lambda "()" (code_of_ast body)
     | Lambda ([], Some s, body) -> make_lambda s (code_of_ast body)
@@ -47,6 +66,7 @@ let rec code_of_ast ast =
         let bl =
           bl |> List.map f
              |> String.concat " "
+             |> sur_paren
         in
         let body = code_of_ast body in
         "(let " ^ bl ^ body ^ ")"
@@ -62,12 +82,15 @@ let rec code_of_ast ast =
         in
         "(begin " ^ s ^ ")"
 
+let make_let name expr body =
+  Printf.sprintf "(let ((%s %s)) %s)" name expr body
+
 let rename =
   let sl = SlotNumber.make (fun x -> "__user" ^ (string_of_int x) ^ "_") in
   fun s -> (SlotNumber.fresh sl) ^ s
 
 let add_defs map src dst =
-  List.fold_left2 (fun x y z -> SymMap.add y z x) map src dst
+  List.fold_left2 (fun x y z -> SymMap.add y (if y = "Y-star" then y else z) x) map src dst
 
 let (>::) x xs = match x with
   | Some s -> s :: xs
@@ -75,8 +98,8 @@ let (>::) x xs = match x with
 
 let rec alpha_trans_aux ast symmap =
   let recf ast = alpha_trans_aux ast symmap in
-  let update_map binds map = 
-    let bsyms = List.map (fun b -> b.sym) binds in
+  let update_map binds map =
+    let bsyms = List.map fst binds in
     let renames = List.map rename bsyms in
     add_defs map bsyms renames
   in
@@ -88,13 +111,19 @@ let rec alpha_trans_aux ast symmap =
     List.map fb binds
   in
   match ast with
-    | Symbol s -> Symbol (SymMap.find s symmap)
+    | Symbol s -> (match SymMap.find_opt s symmap with
+      | Some t -> Symbol t
+      | _ -> ast)
     | Lambda (args, larg, body) ->
         let all = larg >:: args in
         let renames = List.map rename all in
         let symmap = add_defs symmap all renames in
         let body = alpha_trans_aux body symmap in
-        Lambda (renames, larg, body)
+        (match larg with
+          | Some _ ->
+              let larg, arg = (List.hd renames, List.tl renames) in
+              Lambda (args, Some larg, body)
+          | None -> Lambda (renames, None, body))
     | Apply (f, args) -> Apply (recf f, List.map recf args)
     | Define (binds, body) ->
         let symmap = update_map binds symmap in
@@ -113,7 +142,7 @@ let rec alpha_trans_aux ast symmap =
 let alpha_trans ast = alpha_trans_aux ast SymMap.empty
 
 
-let mutrec_slot = SlotNumber.make (fun x -> "__mtx_rec_" ^ (string_of_int x))
+let mutrec_slot = SlotNumber.make (fun x -> "__mutrec_" ^ (string_of_int x))
 let compiler_slot = SlotNumber.make (fun x -> "__compiler_sym_" ^ (string_of_int x))
 
 let split_defs binds =
@@ -121,25 +150,12 @@ let split_defs binds =
     | Lambda _ -> true
     | _ -> false
   in
-  let lambdas = List.filter (fun x -> is_lambda x.def) binds in
-  let values = List.filter (fun x -> not (is_lambda x.def)) binds in
-  (lambdas, values)
-
-let y_star = "Y-star"
-let y_star_body =
-  let src = 
-    "(lambda l \
-       ((lambda (u) (u u)) \
-        (lambda (p) \
-          (map (lambda (li) (lambda x (apply (apply li (p p)) x))) l))))"
-  in
-  let lexbuf = Lexing.from_string src in
-  Parser.root Lexer.program lexbuf
+  List.partition (fun x -> is_lambda (snd x)) binds
 
 let rec re_bind binds idx l = match binds with
   | x :: xs ->
-      let s, t = x in
-      let t = Apply (Symbol "list-ref", [ l; Num idx ]) in
+      let s, _ = x in
+      let t = Apply (Primitive "list-ref", [ l; Num idx ]) in
       let xs = re_bind xs (idx + 1) l in
       (s, t) :: xs
   | [] -> []
@@ -171,7 +187,7 @@ let rec remove_define ast symmap =
         let lambdas, rm_rec =
           let mutrec_list = SlotNumber.fresh_list mutrec_slot (List.length lambdas) in
           let rewrite_map =
-            lambdas |> List.map (fun x -> x.sym)
+            lambdas |> List.map (fun x -> fst x)
                     |> List.fold_left2 (fun x y z -> SymMap.add z y x) symmap mutrec_list 
           in
           let rewrite_lambda lambda = match lambda with
@@ -185,7 +201,8 @@ let rec remove_define ast symmap =
             | _ -> raise (Invalid_argument "lambda must be Lambda")
           in
           let rm_rec =
-            lambdas |> List.map (fun x -> x.def)
+            lambdas |> List.split
+                    |> snd
                     |> List.map rewrite_lambda
                     |> fun x -> Apply (Symbol y_star, x)
           in
@@ -198,15 +215,28 @@ let rec remove_define ast symmap =
         let res = Lambda ([ lsym ], None, res) in
         Apply (res, [ rm_rec ])
     | Symbol s -> Symbol (if SymMap.mem s symmap then SymMap.find s symmap else s)
+    | Let (bl, body) ->
+        let bl =
+          let a, b = List.split bl in
+          let b = List.map recf b in
+          List.combine a b
+        in
+        let body = recf body in
+        Let (bl, body)
     | Apply (f, args) -> Apply (recf f, List.map recf args)
     | Lambda (a, b, body) -> Lambda (a, b, recf body)
     | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
     | Statement l -> Statement (List.map recf l)
     | _ -> ast
 
+let make_ast src =
+  src |> make_let y_star y_star_body
+      |> make_let map map_body
+      |> make_let open_map open_map_body
+      |> Lexing.from_string
+      |> Parser.root Lexer.program
 
 let normalize ast =
-  ast |> alpha_trans
-      |> flat_defs
+  ast |> flat_defs
+      |> alpha_trans
       |> fun x -> remove_define x SymMap.empty
-      |> fun x -> Let ([( y_star, y_star_body )], x)

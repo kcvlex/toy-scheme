@@ -1,8 +1,9 @@
 (tests
   (libraries compiler)
   (names testAst
-         testDecompiler 
-         testParser))
+         testCps
+         testBetaReduction
+         testDecompiler))
 (env
   (dev
     (flags (:standard -warn-error -A))))

@@ -10,8 +10,10 @@ rule program = parse
   | '(' { LPAREN }
   | ')' { RPAREN }
   | '.' { DOT }
+  | '`' { QUOTE }
   | "lambda" { LAMBDA }
   | "define" { DEFINE }
+  | "if" { IF }
   | "cond" { COND }
   | "else" { ELSE }
   | "let" { LET }

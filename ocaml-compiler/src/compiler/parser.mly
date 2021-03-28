@@ -2,8 +2,8 @@
   open AstType
 %}
 
-%token LAMBDA DEFINE COND ELSE BEGIN LET
-%token LPAREN RPAREN DOT EOF
+%token LAMBDA DEFINE IF COND ELSE BEGIN LET
+%token LPAREN RPAREN DOT QUOTE EOF
 %token <string> NUM
 %token <string> ID
 
@@ -16,22 +16,24 @@ root: expr EOF { $1 } ;
 
 (* Expr *)
 expr:
-  | define | binds | cond | lambda | stmt | apply | atom { $1 }
+  | define | binds | branch | lambda | stmt | apply | atom { $1 }
 ;
 
 (* Define *)
-define: LPAREN DEFINE ID expr RPAREN expr { Define ([{ sym = $3; def = $4 }], $6) };
+define: LPAREN DEFINE ID expr RPAREN expr { Define ([ ($3, $4) ], $6) };
 
 (* Binds *)
 binds: LPAREN LET LPAREN list(bind_one) RPAREN expr RPAREN { Let ($4, $6) };
-bind_one: LPAREN ID expr RPAREN { { sym = $2; def = $3 } };
+bind_one: LPAREN ID expr RPAREN { ($2, $3) };
 
-(* Cond *)
-cond: LPAREN COND cond_aux RPAREN { $3 };
-cond_aux:
+(* Branch *)
+branch: b_cond | b_if { $1 };
+b_cond: LPAREN COND b_cond_aux RPAREN { $3 };
+b_cond_aux:
   | LPAREN expr expr RPAREN LPAREN ELSE expr RPAREN { Branch ($2, $3, $7) }
-  | LPAREN expr expr RPAREN cond_aux { Branch ($2, $3, $5) }
+  | LPAREN expr expr RPAREN b_cond_aux { Branch ($2, $3, $5) }
 ;
+b_if: LPAREN IF expr expr expr RPAREN { Branch ($3, $4, $5) };
 
 (* Lambda *)
 lambda: 
@@ -50,14 +52,19 @@ apply: LPAREN expr list(expr) RPAREN { Apply ($2, $3) };
 
 (* Atom *)
 atom:
+  | LPAREN RPAREN { Nil }
   | NUM { Num (int_of_string $1) }
   | ID {
     match $1 with
-      | "+" | "-" | "*" | "/" | "eq?" | "set!" | "<" -> Primitive $1
+      | "+" | "-" | "*" | "/" | "<" |
+        "car" | "cdr" | "cons" | "list-ref" |
+        "eq?" | "null?" | "set!" | "apply"  -> Primitive $1
       | "#t" -> Bool true
       | "#f" -> Bool false
-      | _ -> Symbol $1 
+      | "()" -> Nil
+      | s -> Symbol s 
     }
+  | QUOTE expr { Quote $2 }
 ;
 
 %%

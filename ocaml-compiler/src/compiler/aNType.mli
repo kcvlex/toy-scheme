@@ -1,5 +1,5 @@
 type t =
-  | Term of value_type
+  | Term of term_type
   | Bind of (string * term_type) * t
   | Branch of term_type * t * t
   | TailCall of term_type * term_type list

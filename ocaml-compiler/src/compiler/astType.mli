@@ -1,6 +1,8 @@
 type t =
   | Num of int
   | Bool of bool
+  | Nil
+  | Quote of t
   | Symbol of string
   | Primitive of string
   | Lambda of string list * string option * t
