@@ -3,6 +3,7 @@
   (names testAst
          testCps
          testBetaReduction
+         testANormalize
          testDecompiler))
 (env
   (dev

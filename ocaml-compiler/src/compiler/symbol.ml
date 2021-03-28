@@ -18,9 +18,6 @@ let string_of_sym sym = match sym with
   | RecordSym r -> string_of_rsym r
   | ContSym c -> string_of_csym c
   | ClosureSym c -> string_of_clsym c
-  | Primitive "+" -> "add"
-  | Primitive "-" -> "sub"
-  | Primitive "<" -> "less"
   | Primitive s -> s
   | CommonSym s -> s
   | ParamSym i -> "__t" ^ (string_of_int i)

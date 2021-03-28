@@ -10,3 +10,5 @@ and term_type =
   | Primitive of string
   | Ref of string
   | Lambda of string list * string option * t
+  | Nil
+  | Quote of AstType.t

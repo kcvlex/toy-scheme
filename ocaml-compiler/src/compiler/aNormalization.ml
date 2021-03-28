@@ -43,6 +43,8 @@ let rec a_normalize cps = match cps with
       let b = a_normalize b in
       let c = a_normalize c in
       Branch (a, b, c)
+  | CpsType.Quote q -> Term (Quote q)
+  | CpsType.Nil -> Term Nil
   | _ -> raise (Invalid_argument "RefIndex")
 
 
@@ -63,4 +65,6 @@ and ast_of_term term = match term with
   | Bool b -> AstType.Bool b
   | Primitive s -> AstType.Primitive s
   | Ref s -> AstType.Symbol s
+  | Nil -> AstType.Nil
+  | Quote q -> AstType.Quote q
   | Lambda (args, larg, body) -> AstType.Lambda (args, larg, ast_of_anorm body)

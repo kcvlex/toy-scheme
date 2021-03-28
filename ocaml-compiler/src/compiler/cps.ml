@@ -9,25 +9,53 @@ let make_cps_value value =
   let k = SlotNumber.fresh cont_id_slot in
   AdmLambda (k, Passing (Ref k, value))
 
-let replace_primitive s = match s with
-  | "+" -> "cps-add"
-  | "-" -> "cps-sub"
-  | "*" -> "cps-mul"
-  | "/" -> "cps-div"
-  | "<" -> "cps-less"
-  | "cons" -> "cps-cons"
-  | "car" -> "cps-car"
-  | "cdr" -> "cps-cdr"
-  | "null?" -> "cps-null?"
-  | "eq?" -> "cps-eq?"
-  | "apply" -> "cps-apply"
-  | "list-ref" -> "cps-list-ref"
-  | _ -> raise (Invalid_argument s)
+let gen_exargs_prim op =
+  let k = SlotNumber.fresh cont_id_slot in
+  let args = SlotNumber.fresh cont_param_slot in
+  op |> fun x -> ApplyPrimitive (Primitive "apply", [ Ref (Primitive x); Ref args ])
+     |> fun x -> Passing (Ref k, x)
+     |> fun x -> Lambda (k, [], Some args, x)
+
+let gen_unary_prim op =
+  let k = SlotNumber.fresh cont_id_slot in
+  let arg = SlotNumber.fresh cont_param_slot in
+  op |> fun x -> ApplyPrimitive (Primitive x, [ Ref arg ])
+     |> fun x -> Passing (Ref k, x)
+     |> fun x -> Lambda (k, [ arg ], None, x)
+
+let gen_binop_prim op =
+  let k = SlotNumber.fresh cont_id_slot in
+  let arg1 = SlotNumber.fresh cont_param_slot in
+  let arg2 = SlotNumber.fresh cont_param_slot in
+  let args = [ arg1; arg2 ] in
+  op |> fun x -> ApplyPrimitive (Primitive x, List.map (fun x -> Ref x) args)
+     |> fun x -> Passing (Ref k, x)
+     |> fun x -> Lambda (k, args, None, x)
+
+let gen_apply () =
+  let k = SlotNumber.fresh cont_id_slot in
+  let f = SlotNumber.fresh cont_param_slot in
+  let args = SlotNumber.fresh cont_param_slot in
+  ApplyPrimitive (Primitive "cons", [ Ref k; Ref args ])
+    |> fun x -> ApplyPrimitive (Primitive "apply", [ Ref f; x ])
+    |> fun x -> Lambda (k, [ f; args ], None, x)
+
+let replace_primitive s =
+  match s with
+    | "apply" -> gen_apply ()
+    | _ ->
+        let gen = match s with
+          | "+" | "-" | "*" | "/" | "<" -> gen_exargs_prim
+          | "cons" | "eq?" | "list-ref" -> gen_binop_prim
+          | "car" | "cdr" | "null?" -> gen_unary_prim
+          | _ -> raise (Invalid_argument s)
+        in
+        gen s
 
 let rec cps_trans ast = match ast with
   | AstType.Num n -> make_cps_value (Int n)
   | AstType.Bool b -> make_cps_value (Bool b)
-  | AstType.Primitive s -> Ref (Primitive (replace_primitive s))
+  | AstType.Primitive s -> replace_primitive s
   | AstType.Symbol s -> make_cps_value (Ref (CommonSym s))
   | AstType.Nil -> make_cps_value (Nil)
   | AstType.Quote q -> make_cps_value (Quote q)
@@ -38,6 +66,10 @@ let rec cps_trans ast = match ast with
       let body = cps_trans body in
       make_cps_value (Lambda (k, args, larg, Passing (body, Ref k)))
   | AstType.Apply (f, args) ->
+      let is_prim = match f with
+        | AstType.Primitive _ -> true
+        | _ -> false
+      in
       let merge_args body params cps_lis =
         let merge cps param body = Passing (cps, AdmLambda (param, body)) in
         List.fold_right2 merge cps_lis params body
@@ -46,16 +78,15 @@ let rec cps_trans ast = match ast with
       let f = cps_trans f in
       let args = List.map cps_trans args in
       let params = SlotNumber.fresh_list cont_param_slot (List.length args) in
-      let merged = (match f with
-        | Ref (Primitive _) ->
-            let body = ApplyFunc (f, Ref k, List.map (fun x -> Ref x) params) in
-            merge_args body params args
-        | _ -> 
-            let t = SlotNumber.fresh cont_param_slot in
-            let body = ApplyFunc (Ref t, Ref k, List.map (fun x -> Ref x) params) in
-            merge_args body (t :: params) (f :: args))
-      in
-      AdmLambda (k, merged)
+      if is_prim then
+        ApplyFunc (f, Ref k, List.map (fun x -> Ref x) params)
+        |> fun x -> merge_args x params args
+        |> fun x -> AdmLambda (k, x)
+      else
+        let t = SlotNumber.fresh cont_param_slot in
+        ApplyFunc (Ref t, Ref k, List.map (fun x -> Ref x) params)
+        |> fun x -> merge_args x (t :: params) (f :: args)
+        |> fun x -> AdmLambda (k, x)
   | AstType.Define _ -> raise (Invalid_argument "Define must be removed")
   | AstType.Let (blis, body) ->
       let rec fn lis = match lis with
@@ -112,6 +143,8 @@ let rec ast_of_cps cps = match cps with
       let f = ast_of_cps f in
       let args = List.map ast_of_cps (k :: args) in
       AstType.Apply (f, args)
+  | ApplyPrimitive (s, args) ->
+      AstType.Apply (AstType.Primitive (string_of_sym s), List.map ast_of_cps args)
   | Passing (f, k) -> AstType.Apply (ast_of_cps f, [ ast_of_cps k ])
   | Let ((s, t), body) ->
       let t = ast_of_cps t in
