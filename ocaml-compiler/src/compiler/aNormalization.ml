@@ -13,24 +13,19 @@ let rec a_normalize cps = match cps with
       let args = List.map string_of_sym args in
       let larg = Option.map string_of_sym larg in
       Term (Lambda (args, larg, a_normalize body))
+  | CpsType.ApplyFunc (Ref (Primitive s), k, args) ->
+      let args = 
+        args |> List.map a_normalize 
+             |> List.map extract_term
+      in
+      normalize_lambda (ANType.Primitive s) k args
   | CpsType.ApplyFunc (f, k, args) ->
       let f, args =
         (f :: args) |> List.map a_normalize
                     |> List.map extract_term
                     |> fun l -> (List.hd l, List.tl l)
       in
-      (match k with
-        | CpsType.Ref _ -> TailCall (f, args)
-        | CpsType.AdmLambda (k, body) ->
-            Call ((string_of_sym k, f, args), a_normalize body)
-        | CpsType.Lambda (k, lambda_args, lambda_larg, body) ->
-            (* FIXME : unreachable ?? *)
-            let k = string_of_sym k in
-            let lambda_args = List.map string_of_sym lambda_args in
-            let lambda_larg = Option.map string_of_sym lambda_larg in
-            let body = a_normalize body in
-            Call ((k, f, args), Term (Lambda (lambda_args, lambda_larg, body)))
-        | _ -> raise (Invalid_argument "BBB"))
+      normalize_lambda f k args
   | CpsType.Passing (a, b) -> (match a with
     | CpsType.Ref _ -> a_normalize b
     | _ -> raise (Invalid_argument "CCC"))
@@ -46,6 +41,18 @@ let rec a_normalize cps = match cps with
   | CpsType.Quote q -> Term (Quote q)
   | CpsType.Nil -> Term Nil
   | _ -> raise (Invalid_argument "RefIndex")
+and normalize_lambda f k args = match k with
+  | CpsType.Ref _ -> TailCall (f, args)
+  | CpsType.AdmLambda (k, body) ->
+      Call ((string_of_sym k, f, args), a_normalize body)
+  | CpsType.Lambda (k, lambda_args, lambda_larg, body) ->
+      (* FIXME : unreachable ?? *)
+      let k = string_of_sym k in
+      let lambda_args = List.map string_of_sym lambda_args in
+      let lambda_larg = Option.map string_of_sym lambda_larg in
+      let body = a_normalize body in
+      Call ((k, f, args), Term (Lambda (lambda_args, lambda_larg, body)))
+  | _ -> raise (Invalid_argument "BBB")
 
 
 let rec ast_of_anorm an = match an with

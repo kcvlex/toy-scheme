@@ -30,7 +30,6 @@ let rec indexing_aux cps d map =
         let d = d + (List.length args) + 1 + larg_f in
         Lambda (k, args, larg, indexing_aux body d map)
     | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
-    | ApplyPrimitive (s, args) -> ApplyPrimitive (s, List.map recf args)
     | Passing (f, k) ->  Passing (recf f, recf k)
     | Let ((s, x), body) -> Let ((s, recf x), recf body)
     | Ref s -> (match replace_if_adm s d map with
@@ -53,7 +52,6 @@ let replace_term target expr =
           let add = (List.length args) + 1 + (if Option.is_some larg then 1 else 0) in
           Lambda (k, args, larg, replace_aux body (depth + add))
       | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
-      | ApplyPrimitive (s, args) -> ApplyPrimitive (s, List.map recf args)
       | Passing (a, b) -> Passing (recf a, recf b)
       | Let ((x, t), body) -> Let ((x, recf t), recf body)
       | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
@@ -68,7 +66,6 @@ let replace_term target expr =
           let add = (List.length args) + 1 + (if Option.is_some larg then 1 else 0) in
           Lambda (k, args, larg, fix_index body depth_when_replaced (depth + add))
         | ApplyFunc (f, k, args) -> ApplyFunc (recf f, recf k, List.map recf args)
-        | ApplyPrimitive (s, args) -> ApplyPrimitive (s, List.map recf args)
         | Passing (a, b) -> Passing (recf a, recf b)
         | Let ((x, t), body) -> Let ((x, recf t), recf body)
         | Branch (a, b, c) -> Branch (recf a, recf b, recf c)
@@ -88,7 +85,6 @@ let beta_step cps =
           let add = (List.length args) + 1 + (if Option.is_some larg then 1 else 0) in
           Lambda (k, args, larg, beta_step_aux body (depth + add))
       | ApplyFunc (f, k, args) -> ApplyFunc (beta0 f, beta0 k, List.map beta0 args)
-      | ApplyPrimitive (s, args) -> ApplyPrimitive (s, List.map beta0 args)
       | Passing (AdmLambda (_, body), x) -> update := true; replace_term body x
       | Passing (a, b) -> Passing (beta0 a, beta0 b)
       | Let ((x, t), body) -> Let ((x, beta0 t), beta0 body)
@@ -126,7 +122,6 @@ let restore_indexing cps =
         let b = restore_aux b in
         let c = List.map restore_aux c in
         ApplyFunc (a, b, c)
-    | ApplyPrimitive (s, args) -> ApplyPrimitive (s, List.map restore_aux args)
     | Passing (a, b) ->
         let a = restore_aux a in
         let b = restore_aux b in
