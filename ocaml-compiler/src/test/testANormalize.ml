@@ -1,16 +1,17 @@
 open Compiler
 open TestUtil
 
-let decorate cps_code = "(" ^ cps_code ^ " display)"
+let decorate an = "(display (" ^ an ^ "))"
  
 let () =
   let code = 
-    source2 |> Ast.make_ast
+    source4 |> Ast.make_ast
             |> Ast.normalize
             |> Cps.cps_trans
             |> AdmBetaReduction.normalize
             |> ANormalization.a_normalize
-            |> ANormalization.ast_of_anorm
+            |> ANormalization.merge_lets
+            |> ANormalization.ast_of_anf
             |> Ast.code_of_ast
             |> decorate
   in

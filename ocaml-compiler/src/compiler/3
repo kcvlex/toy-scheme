@@ -56,51 +56,43 @@ let (>::) s sl = match s with
   | Some a -> a :: sl
   | None -> sl
 
-let rec merge_lets_aux anf defined tbl = match anf with
+
+let rec merge_lets_aux anf defined = match anf with
   | Term t -> 
-      let t, set = merge_lets_aux_term t defined tbl in
+      let t, set = merge_lets_aux_term t defined in
       (Term t, set)
   | Bind (lis, Bind ([ (s, t) ], body)) ->
-      begin
-        Hashtbl.add tbl s ();
-        let t, tfree = merge_lets_aux t defined tbl in
-        let found = List.fold_left (fun x y -> x || (SS.mem y tfree)) false (fst (List.split lis)) in
-        if found then
-          let body, _ = merge_lets_aux (Bind ([ (s, t) ], body)) defined tbl in
-          (Bind (lis, body), SS.empty)
-        else
-          merge_lets_aux (Bind ((s, t) :: lis, body)) defined tbl
-      end
+      let t, tfree = merge_lets_aux t defined in
+      let found = List.fold_left (fun x y -> x || (SS.mem y tfree)) false (fst (List.split lis)) in
+      if found then
+        let defined = SS.add s defined in
+        let body, _ = merge_lets_aux (Bind ([ (s, t) ], body)) defined in
+        (Bind (lis, body), SS.empty)
+      else
+        merge_lets_aux (Bind ((s, t) :: lis, body)) defined
   | Bind (lis, body) ->
-      let body, _ = merge_lets_aux body SS.empty tbl in
-      (match lis with
-        | (s, t) :: [] ->
-            if Hashtbl.mem tbl s then
-              (Bind (lis, body), SS.empty)
-            else begin
-              Hashtbl.add tbl s ();
-              let t, _ = merge_lets_aux t SS.empty tbl in
-              (Bind ([ (s, t) ], body), SS.empty)
-            end
-        | _ -> (Bind (lis, body), SS.empty))
+      let body, _ = merge_lets_aux body SS.empty in
+      match lis with
+        | (s, t) :: [] -> Bind (s, merge_lets_aux t SS.empty body)
+      (Bind (lis, body), SS.empty)
   | Branch (p, t1, t2) ->
-      let p, s1 = merge_lets_aux_term p defined tbl in
-      let t1, s2 = merge_lets_aux t1 defined tbl in
-      let t2, s3 = merge_lets_aux t2 defined tbl in
+      let p, s1 = merge_lets_aux_term p defined in
+      let t1, s2 = merge_lets_aux t1 defined in
+      let t2, s3 = merge_lets_aux t2 defined in
       (Branch (p, t1, t2), s1 |> SS.union s2 |> SS.union s3)
   | TailCall (f, args) ->
-      let f, fs = merge_lets_aux_term f defined tbl in
+      let f, fs = merge_lets_aux_term f defined in
       let args, fargs = 
         args
-        |> List.map (fun x -> merge_lets_aux_term x defined tbl)
+        |> List.map (fun x -> merge_lets_aux_term x defined)
         |> List.split
       in
       (TailCall (f, args), List.fold_left (fun x y -> SS.union x y) fs fargs)
-and merge_lets_aux_term term defined tbl = match term with
+and merge_lets_aux_term term defined = match term with
   | Lambda (sl, s, body) ->
       let l = s >:: sl in
       let defined = List.fold_left (fun x y -> SS.add y x) defined l in
-      let body, free = merge_lets_aux body defined tbl in
+      let body, free = merge_lets_aux body defined in
       (Lambda (sl, s, body), free)
   | Ref s ->
       let set = if SS.mem s defined then SS.empty else SS.add s SS.empty in
@@ -109,8 +101,7 @@ and merge_lets_aux_term term defined tbl = match term with
 
   
 let merge_lets anf =
-  let tbl = Hashtbl.create 8 in
-  let res, _ = merge_lets_aux anf SS.empty tbl in
+  let res, _ = merge_lets_aux anf SS.empty in
   res
 
 let rec ast_of_anf an = match an with

@@ -1,9 +1,8 @@
 type t =
   | Term of term_type
-  | Bind of (string * term_type) * t
+  | Bind of (string * t) list * t
   | Branch of term_type * t * t
   | TailCall of term_type * term_type list
-  | Call of (string * term_type * term_type list) * t
 and term_type =
   | Int of int
   | Bool of bool
