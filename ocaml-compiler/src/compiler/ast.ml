@@ -69,7 +69,7 @@ let rec code_of_ast ast =
              |> sur_paren
         in
         let body = code_of_ast body in
-        "(let " ^ bl ^ body ^ ")"
+        "(let* " ^ bl ^ body ^ ") "
     | Branch (a, b, c) ->
         let a = code_of_ast a in
         let b = code_of_ast b in

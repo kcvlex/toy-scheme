@@ -4,6 +4,7 @@
          testCps
          testBetaReduction
          testANormalize
+         testClosure
          testDecompiler))
 (env
   (dev

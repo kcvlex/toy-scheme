@@ -52,66 +52,107 @@ and normalize_app f k args = match k with
   | _ -> raise (Invalid_argument "Invalid Continuation")
 
 
-let (>::) s sl = match s with
-  | Some a -> a :: sl
-  | None -> sl
+let branch_slot = SlotNumber.make (fun x -> "__br_" ^ (string_of_int x))
 
-let rec merge_lets_aux anf defined tbl = match anf with
-  | Term t -> 
-      let t, set = merge_lets_aux_term t defined tbl in
-      (Term t, set)
-  | Bind (lis, Bind ([ (s, t) ], body)) ->
-      begin
-        Hashtbl.add tbl s ();
-        let t, tfree = merge_lets_aux t defined tbl in
-        let found = List.fold_left (fun x y -> x || (SS.mem y tfree)) false (fst (List.split lis)) in
-        if found then
-          let body, _ = merge_lets_aux (Bind ([ (s, t) ], body)) defined tbl in
-          (Bind (lis, body), SS.empty)
-        else
-          merge_lets_aux (Bind ((s, t) :: lis, body)) defined tbl
-      end
+let rec lift_branch anf = match anf with
+  | Term t -> Term (lift_branch_term t)
   | Bind (lis, body) ->
-      let body, _ = merge_lets_aux body SS.empty tbl in
-      (match lis with
-        | (s, t) :: [] ->
-            if Hashtbl.mem tbl s then
-              (Bind (lis, body), SS.empty)
-            else begin
-              Hashtbl.add tbl s ();
-              let t, _ = merge_lets_aux t SS.empty tbl in
-              (Bind ([ (s, t) ], body), SS.empty)
-            end
-        | _ -> (Bind (lis, body), SS.empty))
+      let a, b = List.split lis in
+      let b = List.map lift_branch b in
+      let lis = List.combine a b in
+      Bind (lis, lift_branch body)
   | Branch (p, t1, t2) ->
-      let p, s1 = merge_lets_aux_term p defined tbl in
-      let t1, s2 = merge_lets_aux t1 defined tbl in
-      let t2, s3 = merge_lets_aux t2 defined tbl in
-      (Branch (p, t1, t2), s1 |> SS.union s2 |> SS.union s3)
-  | TailCall (f, args) ->
-      let f, fs = merge_lets_aux_term f defined tbl in
-      let args, fargs = 
-        args
-        |> List.map (fun x -> merge_lets_aux_term x defined tbl)
-        |> List.split
+      let f t =
+        let s = SlotNumber.fresh branch_slot in
+        let t = 
+          t |> lift_branch
+            |> fun x -> Term (Lambda ([], None, x))
+        in
+        let call = TailCall (Ref s, []) in
+        (s, t, call)
       in
-      (TailCall (f, args), List.fold_left (fun x y -> SS.union x y) fs fargs)
-and merge_lets_aux_term term defined tbl = match term with
-  | Lambda (sl, s, body) ->
-      let l = s >:: sl in
-      let defined = List.fold_left (fun x y -> SS.add y x) defined l in
-      let body, free = merge_lets_aux body defined tbl in
-      (Lambda (sl, s, body), free)
-  | Ref s ->
-      let set = if SS.mem s defined then SS.empty else SS.add s SS.empty in
-      (term, set)
-  | _ -> (term, SS.empty)
+      let s1, t1, c1 = f t1 in
+      let s2, t2, c2 = f t2 in
+      let p = lift_branch_term p in
+      Bind ([ (s1, t1) ], Bind ([ (s2, t2) ], Branch (p, c1, c2)))
+  | TailCall (f, args) -> TailCall (lift_branch_term f, List.map lift_branch_term args)
+and lift_branch_term term = match term with
+  | Lambda (a, b, body) -> Lambda (a, b, lift_branch body)
+  | _ -> term
 
-  
-let merge_lets anf =
-  let tbl = Hashtbl.create 8 in
-  let res, _ = merge_lets_aux anf SS.empty tbl in
-  res
+let rec merge_lets_aux anf = match anf with
+  | Term t -> Term (merge_lets_term t)
+  | Bind (lis, Bind ([ (s, t) ], body)) ->
+      let lis = (s, t) :: lis in
+      merge_lets_aux (Bind (lis, body))
+  | Bind (lis, Bind _) -> raise (Invalid_argument "Bind must be 1")
+  | Bind (lis, body) ->
+      let a, b = List.split lis in
+      let lis =
+        b |> List.map merge_lets_aux
+          |> List.combine a
+          |> List.rev
+      in
+      let body = merge_lets_aux body in
+      Bind (lis, body)
+  | Branch (p, t1, t2) -> Branch (merge_lets_term p, merge_lets_aux t1, merge_lets_aux t2)
+  | TailCall (f, args) -> TailCall (merge_lets_term f, List.map merge_lets_term args)
+and merge_lets_term term = match term with
+  | Lambda (a, b, body) -> Lambda (a, b, merge_lets_aux body)
+  | _ -> term
+let merge_lets anf = anf |> lift_branch |> merge_lets_aux
+
+
+let lambda_name_slot = SlotNumber.make (fun x -> "__f_" ^ (string_of_int x))
+
+let rec bind_lambda_aux named anf = match anf with
+  | Term t -> 
+      let t, l = bind_lambda_term named t in
+      (Term t, l)
+  | Bind (slis, body) ->
+    let rec f l = match l with
+      | (s, t) :: xs ->
+          let t, tlis = bind_lambda_aux true t in
+          let tlis = List.append tlis [ (s, t) ] in
+          let xs = f xs in
+          List.append tlis xs
+      | [] -> []
+    in
+    let slis = f slis in
+    let body, bf = bind_lambda_aux false body in
+    (Bind (List.append slis bf, body), [])
+  | Branch (p, t1, t2) ->
+      let t1, l1 = bind_lambda_aux false t1 in
+      let t2, l2 = bind_lambda_aux false t2 in
+      let p, l3 = bind_lambda_term false p in
+      (Branch (p, t1, t2), l1 |> List.append l2 |> List.append l3)
+  | TailCall (f, args) ->
+      let f, lf = bind_lambda_term false f in
+      let args, largs = List.split (List.map (bind_lambda_term false) args) in
+      let l = List.fold_left List.append lf largs in
+      (TailCall (f, args), l)
+and bind_lambda_term named term = match term with
+  | Lambda (a, b, body) ->
+      let body, bf = bind_lambda_aux false body in
+      let body = match bf with | [] -> body
+        | _ -> Bind (bf, body)
+      in
+      let lambda = Lambda (a, b, body) in
+      if named then 
+        (lambda, [])
+      else
+        let name = SlotNumber.fresh lambda_name_slot in
+        (Ref name, [ (name, Term lambda) ])
+  | _ -> (term, [])
+
+let bind_lambda anf =
+  let anf, l = bind_lambda_aux false anf in
+  match l with
+    | [] -> anf
+    | _ -> Bind (l, anf)
+
+
+let normalize_binds anf = anf |> merge_lets |> bind_lambda
 
 let rec ast_of_anf an = match an with
   | Term t -> ast_of_term t
