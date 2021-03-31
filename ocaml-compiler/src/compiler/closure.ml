@@ -8,12 +8,6 @@ and fv_ele =
 module SS = Set.Make(String)
 
 let clsr_slot = SlotNumber.make (fun x -> "__clsr_" ^ (string_of_int x))
-let proc_body_slot = SlotNumber.make (fun x -> "__proc_body_" ^ (string_of_int x))
-
-let rec to_flat fvl = match fvl with
-  | (FVar s) :: xs -> s :: (to_flat xs)
-  | (FParentList l) :: [] -> to_flat l
-  | [] -> []
 
 let rec find_fv_aux fname flis var idx seed = match flis with
   | (FVar s) :: xs -> if s = var then ClosureRef (seed, idx) else find_fv_aux fname xs var (idx + 1) seed
