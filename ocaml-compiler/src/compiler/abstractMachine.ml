@@ -255,6 +255,15 @@ and eval_call machine f args =
           (match arg with
             | Cons (car, cdr) -> produce_result machine (if s = "car" then car else cdr)
             | _ -> raise (Invalid_argument "must be cons"))
+      | "display" ->
+          let arg = restrict_1arg args in
+          produce_result machine arg;
+          let arg = consume_result machine in
+          (match arg with
+            | Int i -> print_endline (string_of_int i)
+            | Bool true -> print_endline "#t"
+            | Bool false -> print_endline "#f"
+            | _ -> raise (Invalid_argument "display"))
       | _ -> raise (Invalid_argument ("Unkonwn function " ^ s)))
     | Cons (Label i, clsr) ->
         let carg, largs, optarg, proc = Vector.get machine.program i in

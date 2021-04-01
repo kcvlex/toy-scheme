@@ -5,6 +5,7 @@
          testBetaReduction
          testANormalize
          testClosure
+         testAbstractMachine
          testDecompiler))
 (env
   (dev
