@@ -17,3 +17,5 @@ val empty : unit -> 'a t
 val pop_back : 'a t -> unit
 
 val pops : 'a t -> int -> unit
+
+val to_list : 'a t -> 'a list

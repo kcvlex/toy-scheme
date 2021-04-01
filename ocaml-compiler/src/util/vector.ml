@@ -66,3 +66,13 @@ let pops vec len =
   end else begin
     vec.size <- vec.size - len
   end
+
+let to_list vec =
+  let rec aux v l idx =
+    if idx = length v then 
+      l 
+    else
+      let hd = rget v idx in
+      aux v (hd :: l) (idx + 1)
+  in
+  aux vec [] 0

@@ -1,5 +1,3 @@
-(* FIXME : MakeClosure instead of "list" *)
-
 type t = {
   procs : (string * clsr_proc) list;
   body : clsr_expr;

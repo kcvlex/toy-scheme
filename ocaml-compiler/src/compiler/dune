@@ -9,6 +9,7 @@
                                   astType
                                   cpsType
                                   closureType
+                                  abstractMachineType
                                   anfType)
   (name compiler))
 
