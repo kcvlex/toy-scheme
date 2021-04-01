@@ -1,4 +1,5 @@
 open AnfType
+open SymbolType
 open Symbol
 
 module SS = Set.Make(String)
@@ -15,7 +16,7 @@ let rec a_normalize cps = match cps with
       let args = List.map string_of_sym args in
       let larg = Option.map string_of_sym larg in
       Term (Lambda (args, larg, a_normalize body))
-  | CpsType.ApplyFunc (Ref (Primitive s), k, args) ->
+  | CpsType.ApplyFunc (Ref (PrimitiveSym s), k, args) ->
       let args = 
         args |> List.map a_normalize 
              |> List.map extract_term
@@ -164,8 +165,8 @@ let rec ast_of_anf an = match an with
 and ast_of_term term = match term with
   | Int i -> AstType.Num i
   | Bool b -> AstType.Bool b
-  | Primitive s -> AstType.Primitive s
-  | Ref s -> AstType.Symbol s
+  | Primitive p -> AstType.Symbol (PrimitiveSym p)
+  | Ref s -> AstType.Symbol (CommonSym s)
   | Nil -> AstType.Nil
   | Quote q -> AstType.Quote q
   | Lambda (args, larg, body) -> AstType.Lambda (args, larg, ast_of_anf body)

@@ -3,17 +3,24 @@ open TestUtil
 
 let decorate clo = match clo with
   | AstType.Let (l, body) ->
-      let display = AstType.Symbol "display" in
-      let car = AstType.Apply (AstType.Primitive "car", [ body ]) in
-      let cdr = AstType.Apply (AstType.Primitive "cdr", [ body ]) in
-      let called = AstType.Apply (car, [ cdr ]) in
-      let output = AstType.Apply (display, [ called ]) in
-      AstType.Let (l, output)
+      let call = SymbolType.CommonSym "__call" in
+      let body = AstType.Apply (AstType.Symbol call, [ body ]) in
+      AstType.Let (l, body)
   | _ -> raise (Invalid_argument "AAA")
 
 let add_call s =
-  let call = "(define (__call f . args) (if (pair? f) (apply (car f) (cons (cdr f) args)) (apply f args)))" in
-  let apply = "(define (apply-clo f args) (if (pair? f) (apply (car f) (cons (cdr f) args)) (apply f args)))" in
+  let call = 
+    "(define (__call f . args) \
+       (if (pair? f) \
+           (apply (car f) (cons (cdr f) args)) \
+           (apply f args)))" 
+  in
+  let apply = 
+    "(define (apply-clo f args) \
+       (if (pair? f) \
+           (apply (car f) (cons (cdr f) args)) \
+           (apply f args)))" 
+  in
   call ^ apply ^ s
  
 let () =

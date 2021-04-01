@@ -1,5 +1,6 @@
 %{
   open AstType
+  open SymbolType
 %}
 
 %token LAMBDA DEFINE IF COND ELSE BEGIN LET
@@ -56,13 +57,25 @@ atom:
   | NUM { Num (int_of_string $1) }
   | ID {
     match $1 with
-      | "+" | "-" | "*" | "/" | "<" |
-        "car" | "cdr" | "cons" | "list-ref" |
-        "eq?" | "null?" | "set!" | "apply"  -> Primitive $1
-      | "#t" -> Bool true
-      | "#f" -> Bool false
-      | "()" -> Nil
-      | s -> Symbol s 
+      | "+"        -> Symbol (PrimitiveSym ADD)
+      | "-"        -> Symbol (PrimitiveSym SUB)
+      | "*"        -> Symbol (PrimitiveSym MUL)
+      | "/"        -> Symbol (PrimitiveSym DIV)
+      | "eq?"      -> Symbol (PrimitiveSym EQ)
+      | "<"        -> Symbol (PrimitiveSym LESS)
+      | "null?"    -> Symbol (PrimitiveSym NULL)
+      | "cons"     -> Symbol (PrimitiveSym CONS)
+      | "car"      -> Symbol (PrimitiveSym CAR)
+      | "cdr"      -> Symbol (PrimitiveSym CDR)
+      | "list"     -> Symbol (PrimitiveSym LIST)
+      | "list-ref" -> Symbol (PrimitiveSym LISTREF)
+      | "apply"    -> Symbol (PrimitiveSym APPLY)
+      | "map"      -> Symbol (PrimitiveSym MAP)
+      | "display"  -> Symbol (PrimitiveSym DISPLAY)
+      | "#t"       -> Bool true
+      | "#f"       -> Bool false
+      | "()"       -> Nil
+      | s          -> Symbol (CommonSym s)
     }
   | QUOTE expr { Quote $2 }
 ;

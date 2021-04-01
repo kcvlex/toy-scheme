@@ -225,8 +225,8 @@ and eval_call machine f args =
   in
   let args = eval_args args in
   match f with
-    | Primitive s -> (match s with
-      | "+" | "-" | "*" | "/" | "<" | "eq?" ->
+    | Primitive p -> (match p with
+      | ADD | SUB | MUL | DIV | LESS | EQ ->
         (* FIXME : bool *)
         let f x = match x with
           | Int i -> i
@@ -234,28 +234,27 @@ and eval_call machine f args =
         in
         let args = List.map f args in
         let fold f lis = List.fold_left f (List.hd lis) (List.tl lis) in
-        (match s with
-          | "+" -> produce_result machine (Int (fold (fun x y -> x + y) args))
-          | "-" -> produce_result machine (Int (fold (fun x y -> x - y) args))
-          | "*" -> produce_result machine (Int (fold (fun x y -> x * y) args))
-          | "/" -> produce_result machine (Int (fold (fun x y -> x / y) args))
-          | "<" -> let a, b = restrict_2arg args in produce_result machine (Bool (a < b))
-          | "eq?" -> let a, b = restrict_2arg args in produce_result machine (Bool (a = b))
-          | _ -> raise (Invalid_argument ("Unknown op " ^ s)))
-      | "apply" ->
+        (match p with
+          | ADD -> produce_result machine (Int (fold (fun x y -> x + y) args))
+          | SUB -> produce_result machine (Int (fold (fun x y -> x - y) args))
+          | MUL -> produce_result machine (Int (fold (fun x y -> x * y) args))
+          | DIV -> produce_result machine (Int (fold (fun x y -> x / y) args))
+          | LESS -> let a, b = restrict_2arg args in produce_result machine (Bool (a < b))
+          | EQ -> let a, b = restrict_2arg args in produce_result machine (Bool (a = b)))
+      | APPLY ->
           let f, args = restrict_2arg args in
           produce_result machine args;
           let args = consume_result machine in
           insert_instr machine (Call (f, (flat_cons args)));
           eval_step machine
-      | "car" | "cdr" ->
+      | CAR | CDR ->
           let arg = restrict_1arg args in
           produce_result machine arg;
           let arg = consume_result machine in
           (match arg with
-            | Cons (car, cdr) -> produce_result machine (if s = "car" then car else cdr)
+            | Cons (car, cdr) -> produce_result machine (if p = CAR then car else cdr)
             | _ -> raise (Invalid_argument "must be cons"))
-      | "display" ->
+      | DISPLAY ->
           let arg = restrict_1arg args in
           produce_result machine arg;
           let arg = consume_result machine in
@@ -264,7 +263,7 @@ and eval_call machine f args =
             | Bool true -> print_endline "#t"
             | Bool false -> print_endline "#f"
             | _ -> raise (Invalid_argument "display"))
-      | _ -> raise (Invalid_argument ("Unkonwn function " ^ s)))
+      | _ -> raise (Invalid_argument ("Unkonwn function " ^ (Symbol.string_of_sym (PrimitiveSym p)))))
     | Cons (Label i, clsr) ->
         let carg, largs, optarg, proc = Vector.get machine.program i in
         let mem = Hashtbl.create 8 in

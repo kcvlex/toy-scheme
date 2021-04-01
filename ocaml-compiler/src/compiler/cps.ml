@@ -2,7 +2,7 @@ open SymbolType
 open Symbol
 open CpsType
 
-let cont_id_slot = SlotNumber.make (fun x -> ContSym (Cont x))
+let cont_id_slot = SlotNumber.make (fun x -> ContSym x)
 let cont_param_slot = SlotNumber.make (fun x -> ParamSym x)
 let cont_prim_slot = SlotNumber.make (fun x -> "__prim_sym_" ^ (string_of_int x))
 
@@ -13,8 +13,8 @@ let make_cps_value value =
 let rec cps_trans ast = match ast with
   | AstType.Num n -> make_cps_value (Int n)
   | AstType.Bool b -> make_cps_value (Bool b)
-  | AstType.Primitive s -> Ref (Primitive s)
-  | AstType.Symbol s -> make_cps_value (Ref (CommonSym s))
+  | AstType.Symbol ((PrimitiveSym _) as p) -> Ref p
+  | AstType.Symbol s -> make_cps_value (Ref s)
   | AstType.Nil -> make_cps_value (Nil)
   | AstType.Quote q -> make_cps_value (Quote q)
   | AstType.Lambda (args, larg, body) ->
@@ -25,7 +25,7 @@ let rec cps_trans ast = match ast with
       make_cps_value (Lambda (k, args, larg, Passing (body, Ref k)))
   | AstType.Apply (f, args) ->
       let is_prim = match f with
-        | AstType.Primitive _ -> true
+        | AstType.Symbol (PrimitiveSym _) -> true
         | _ -> false
       in
       let merge_args body params cps_lis =
@@ -85,16 +85,18 @@ let rec cps_trans ast = match ast with
 let gen_exargs_prim op =
   let k = SlotNumber.fresh cont_prim_slot in
   let args = SlotNumber.fresh cont_prim_slot in
-  op |> fun x -> [ AstType.Primitive x; AstType.Symbol args ]
-     |> fun x -> AstType.Apply (AstType.Primitive "apply", x)
-     |> fun x -> AstType.Apply (AstType.Symbol k, [ x ])
+  op |> fun x -> AstType.Symbol (PrimitiveSym x)
+     |> fun x -> [ x; AstType.Symbol (CommonSym args) ]
+     |> fun x -> AstType.Apply (AstType.Symbol (PrimitiveSym APPLY), x)
+     |> fun x -> AstType.Apply (AstType.Symbol (CommonSym k), [ x ])
      |> fun x -> AstType.Lambda ([ k ], Some args, x)
 
 let gen_unary_prim op =
   let k = SlotNumber.fresh cont_prim_slot in
   let arg = SlotNumber.fresh cont_prim_slot in
-  op |> fun x -> AstType.Apply (AstType.Primitive x, [ AstType.Symbol arg ])
-     |> fun x -> AstType.Apply (AstType.Symbol k, [ x ])
+  op |> fun x -> AstType.Symbol (PrimitiveSym x)
+     |> fun x -> AstType.Apply (x, [ AstType.Symbol (CommonSym arg) ])
+     |> fun x -> AstType.Apply (AstType.Symbol (CommonSym k), [ x ])
      |> fun x -> AstType.Lambda ([ k; arg ], None, x)
 
 let gen_binop_prim op =
@@ -102,29 +104,28 @@ let gen_binop_prim op =
   let arg1 = SlotNumber.fresh cont_prim_slot in
   let arg2 = SlotNumber.fresh cont_prim_slot in
   let args = [ arg1; arg2 ] in
-  op |> fun x -> AstType.Apply (AstType.Primitive x, List.map (fun x -> AstType.Symbol x) args)
-     |> fun x -> AstType.Apply (AstType.Symbol k, [ x ])
+  op |> fun x -> AstType.Symbol (PrimitiveSym x)
+     |> fun x -> AstType.Apply (x, List.map (fun x -> AstType.Symbol (CommonSym x)) args)
+     |> fun x -> AstType.Apply (AstType.Symbol (CommonSym k), [ x ])
      |> fun x -> AstType.Lambda (k :: args, None, x)
 
 let gen_apply () =
   let k = SlotNumber.fresh cont_prim_slot in
   let f = SlotNumber.fresh cont_prim_slot in
   let args = SlotNumber.fresh cont_prim_slot in
-  AstType.Apply (AstType.Primitive "cons", [ AstType.Symbol k; AstType.Symbol args ])
-  |> fun x -> AstType.Apply (AstType.Primitive "apply", [ AstType.Symbol f; x ])
-  |> fun x -> AstType.Lambda ([ k; f; args ], None, x)
+  [ k; args ] |> List.map (fun x -> AstType.Symbol (CommonSym x))
+              |> fun x -> AstType.Apply (AstType.Symbol (PrimitiveSym CONS), x)
+              |> fun x -> [ AstType.Symbol (CommonSym f); x ]
+              |> fun x -> AstType.Apply (AstType.Symbol (PrimitiveSym APPLY), x)
+              |> fun x -> AstType.Lambda ([ k; f; args ], None, x)
 
-let replace_primitive s =
-  match s with
-    | "apply" -> gen_apply ()
-    | _ ->
-        let gen = match s with
-          | "+" | "-" | "*" | "/" | "<" -> gen_exargs_prim
-          | "cons" | "eq?" | "list-ref" -> gen_binop_prim
-          | "car" | "cdr" | "null?" -> gen_unary_prim
-          | _ -> raise (Invalid_argument s)
-        in
-        gen s
+let replace_primitive p =
+  match p with
+    | APPLY -> gen_apply ()
+    | ADD | SUB | MUL | DIV | LIST -> gen_exargs_prim p
+    | EQ | LESS | CONS | LISTREF -> gen_binop_prim p
+    | CAR | CDR | NULL | DISPLAY -> gen_unary_prim p
+    | MAP -> raise (Invalid_argument "MAP")
 
 let rec ast_of_cps cps = match cps with 
   | Int i -> AstType.Num i
@@ -141,8 +142,8 @@ let rec ast_of_cps cps = match cps with
       let larg = Option.map string_of_sym larg in
       let body = ast_of_cps body in
       AstType.Lambda (k :: args, larg, body)
-  | ApplyFunc (Ref (Primitive s), k, args) ->
-      let f = replace_primitive s in
+  | ApplyFunc (Ref (PrimitiveSym p), k, args) ->
+      let f = replace_primitive p in
       let args = List.map ast_of_cps (k :: args) in
       AstType.Apply (f, args)
   | ApplyFunc (f, k, args) ->
@@ -154,6 +155,6 @@ let rec ast_of_cps cps = match cps with
       let t = ast_of_cps t in
       let body = ast_of_cps body in
       AstType.Let ([ (s, t) ], body)
-  | Ref s -> AstType.Symbol (string_of_sym s)
+  | Ref s -> AstType.Symbol s
   | Branch (a, b, c) -> AstType.Branch (ast_of_cps a, ast_of_cps b, ast_of_cps c)
   | _ -> raise (Invalid_argument "AAA")

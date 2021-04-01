@@ -1,4 +1,5 @@
 open ClosureType
+open SymbolType
 
 type fv_list = fv_ele list
 and fv_ele =
@@ -167,21 +168,22 @@ let rec ast_of_clo_expr expr = match expr with
   | Call (f, args) ->
       let f = ast_of_clo_term f in
       let args = List.map ast_of_clo_term args in
-      AstType.Apply (AstType.Symbol "__call", f :: args)
+      AstType.Apply (AstType.Symbol (CommonSym "__call"), f :: args)
 and ast_of_clo_term term = match term with
   | Int i -> AstType.Num i
   | Bool b -> AstType.Bool b
-  | Primitive "apply" -> AstType.Symbol "apply-clo"
-  | Primitive p -> AstType.Primitive p
+  | Primitive APPLY -> AstType.Symbol (CommonSym "apply-clo")
+  | Primitive p -> AstType.Symbol (PrimitiveSym p)
   | Closure (s, slis) ->
-      let s = AstType.Symbol s in
+      let s = AstType.Symbol (CommonSym s) in
       let slis = List.map ast_of_clo_term slis in
-      let slis = AstType.Apply (AstType.Symbol "list", slis) in
-      AstType.Apply (AstType.Primitive "cons", [ s; slis ])
-  | Var "DUMMY" -> AstType.Apply (AstType.Symbol "list", [ AstType.Num 0 ])
-  | Var s -> AstType.Symbol s
+      let slis = AstType.Apply (AstType.Symbol (PrimitiveSym LIST), slis) in
+      AstType.Apply (AstType.Symbol (PrimitiveSym CONS), [ s; slis ])
+  | Var "DUMMY" -> AstType.Apply (AstType.Symbol (PrimitiveSym LIST), [ AstType.Num 0 ])
+  | Var s -> AstType.Symbol (CommonSym s)
   | Nil -> AstType.Nil
-  | ClosureRef (c, i) -> AstType.Apply (AstType.Primitive "list-ref", [ ast_of_clo_term c; AstType.Num i ])
+  | ClosureRef (c, i) -> 
+      AstType.Apply (AstType.Symbol (PrimitiveSym LISTREF), [ ast_of_clo_term c; AstType.Num i ])
   | Quote t -> AstType.Quote t
   | _ -> raise (Invalid_argument "UNIMPLED")
 

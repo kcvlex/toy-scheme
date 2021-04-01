@@ -1,7 +1,7 @@
 open Compiler
 open TestUtil
 
-let decorate an = "(display (" ^ an ^ "))"
+let decorate an = "(" ^ an ^ ")"
 
 let () =
   let code = 

@@ -1,8 +1,8 @@
 open Compiler
 open TestUtil
 
-let decorate cps_code = "(" ^ cps_code ^ " display)"
-let po = "((lambda (x) (let ((y 10) (z 20) (w (lambda (x) (* x x x)))) (* (w x) y z))) 42)"
+let decorate cps_code = "(" ^ cps_code ^ " (lambda (x) x))"
+
 let () =
   let code = 
     source2 |> Ast.make_ast

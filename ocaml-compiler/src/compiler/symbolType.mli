@@ -1,12 +1,11 @@
 type t =
-  | RecordSym of record_sym
-  | ClosureSym of closure_sym  (* argument of lambda *)
-  | ContSym of cont_sym
+  | ContSym of int
   | ParamSym of int
-  | Primitive of string
+  | PrimitiveSym of primitive_sym
   | CommonSym of string
-  | ProcSym of proc_sym
-and record_sym = Record of int
-and cont_sym = Cont of int
-and proc_sym = Proc of int
-and closure_sym = Closure of int
+and primitive_sym =
+  | ADD | SUB | MUL | DIV 
+  | EQ | LESS | NULL
+  | CONS | CAR | CDR | LIST | LISTREF
+  | APPLY | MAP 
+  | DISPLAY

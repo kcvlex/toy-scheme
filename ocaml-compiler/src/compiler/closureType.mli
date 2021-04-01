@@ -11,8 +11,8 @@ and clsr_expr =
 and clsr_term =
   | Int of int
   | Bool of bool
-  | Primitive of string
   | Closure of string * clsr_term list
+  | Primitive of SymbolType.primitive_sym
   | Var of string
   | Nil
   | Quote of AstType.t

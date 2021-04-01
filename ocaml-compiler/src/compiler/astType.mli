@@ -3,8 +3,7 @@ type t =
   | Bool of bool
   | Nil
   | Quote of t
-  | Symbol of string
-  | Primitive of string
+  | Symbol of SymbolType.t
   | Lambda of string list * string option * t
   | Apply of t * t list
   | Define of bind list * t

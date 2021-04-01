@@ -1,6 +1,6 @@
 open AstType
 
-module SymMap = Map.Make(String)
+module SMap = Map.Make(String)
 
 let y_star = "Y-star"
 let y_star_body =
@@ -26,10 +26,9 @@ let rec code_of_ast ast =
     | Num i -> string_of_int i
     | Bool true -> "#t"
     | Bool false -> "#f"
-    | Symbol s -> s
+    | Symbol s -> Symbol.string_of_sym s
     | Nil -> "()"
     | Quote s -> "`" ^ (code_of_ast s)
-    | Primitive s -> s
     | Lambda ([], None, body) -> make_lambda "()" (code_of_ast body)
     | Lambda ([], Some s, body) -> make_lambda s (code_of_ast body)
     | Lambda (args, None, body) -> 
@@ -90,7 +89,7 @@ let rename =
   fun s -> (SlotNumber.fresh sl) ^ s
 
 let add_defs map src dst =
-  List.fold_left2 (fun x y z -> SymMap.add y (if y = "Y-star" then y else z) x) map src dst
+  List.fold_left2 (fun x y z -> SMap.add y (if y = "Y-star" then y else z) x) map src dst
 
 let (>::) x xs = match x with
   | Some s -> s :: xs
@@ -106,14 +105,17 @@ let rec alpha_trans_aux ast symmap =
   let trans_binds binds map =
     let fb b = 
       let s, t = b in
-      (SymMap.find s map, alpha_trans_aux t map)
+      (SMap.find s map, alpha_trans_aux t map)
     in
     List.map fb binds
   in
   match ast with
-    | Symbol s -> (match SymMap.find_opt s symmap with
-      | Some t -> Symbol t
-      | _ -> ast)
+    | Symbol (CommonSym s) -> (match SMap.find_opt s symmap with
+      | Some t -> Symbol (CommonSym t)
+      | None -> Symbol (CommonSym s))
+    | Symbol (PrimitiveSym MAP) -> alpha_trans_aux (Symbol (CommonSym "map")) symmap  (* FIXME *)
+    | Symbol (PrimitiveSym _) -> ast
+    | Symbol _ -> raise (Invalid_argument "AST doesn't have contsym")
     | Lambda (args, larg, body) ->
         let all = larg >:: args in
         let renames = List.map rename all in
@@ -139,7 +141,7 @@ let rec alpha_trans_aux ast symmap =
     | Statement lis -> Statement (List.map recf lis)
     | _ -> ast
 
-let alpha_trans ast = alpha_trans_aux ast SymMap.empty
+let alpha_trans ast = alpha_trans_aux ast SMap.empty
 
 
 let mutrec_slot = SlotNumber.make (fun x -> "__mutrec_" ^ (string_of_int x))
@@ -155,7 +157,7 @@ let split_defs binds =
 let rec re_bind binds idx l = match binds with
   | x :: xs ->
       let s, _ = x in
-      let t = Apply (Primitive "list-ref", [ l; Num idx ]) in
+      let t = Apply (Symbol (PrimitiveSym LISTREF), [ l; Num idx ]) in
       let xs = re_bind xs (idx + 1) l in
       (s, t) :: xs
   | [] -> []
@@ -188,13 +190,13 @@ let rec remove_define ast symmap =
           let mutrec_list = SlotNumber.fresh_list mutrec_slot (List.length lambdas) in
           let rewrite_map =
             lambdas |> List.map (fun x -> fst x)
-                    |> List.fold_left2 (fun x y z -> SymMap.add z y x) symmap mutrec_list 
+                    |> List.fold_left2 (fun x y z -> SMap.add z y x) symmap mutrec_list 
           in
           let rewrite_lambda lambda = match lambda with
             | Lambda (args, larg, body) ->
                 let all = larg >:: args in
                 let rewrite_map = 
-                  List.fold_left (fun x y -> SymMap.remove y x) rewrite_map all in
+                  List.fold_left (fun x y -> SMap.remove y x) rewrite_map all in
                 let body = remove_define body rewrite_map in
                 body |> fun x -> Lambda (args, larg, x)
                      |> fun x -> Lambda (mutrec_list, None, x)
@@ -204,9 +206,9 @@ let rec remove_define ast symmap =
             lambdas |> List.split
                     |> snd
                     |> List.map rewrite_lambda
-                    |> fun x -> Apply (Symbol y_star, x)
+                    |> fun x -> Apply (Symbol (CommonSym y_star), x)
           in
-          (re_bind lambdas 0 (Symbol lsym), rm_rec)
+          (re_bind lambdas 0 (Symbol (CommonSym lsym)), rm_rec)
         in
         let values = List.map (fun x -> (fst x, remove_define (snd x) symmap)) values in
         let binds = List.append lambdas values in
@@ -214,7 +216,9 @@ let rec remove_define ast symmap =
         let res = Let (binds, body) in
         let res = Lambda ([ lsym ], None, res) in
         Apply (res, [ rm_rec ])
-    | Symbol s -> Symbol (if SymMap.mem s symmap then SymMap.find s symmap else s)
+    | Symbol (CommonSym s) -> 
+        Symbol (CommonSym (if SMap.mem s symmap then SMap.find s symmap else s))
+    | Symbol s -> Symbol s
     | Let (bl, body) ->
         let bl =
           let a, b = List.split bl in
@@ -239,4 +243,4 @@ let make_ast src =
 let normalize ast =
   ast |> flat_defs
       |> alpha_trans
-      |> fun x -> remove_define x SymMap.empty
+      |> fun x -> remove_define x SMap.empty

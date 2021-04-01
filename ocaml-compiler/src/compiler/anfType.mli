@@ -6,7 +6,7 @@ type t =
 and term_type =
   | Int of int
   | Bool of bool
-  | Primitive of string
+  | Primitive of SymbolType.primitive_sym
   | Ref of string
   | Lambda of string list * string option * t
   | Nil

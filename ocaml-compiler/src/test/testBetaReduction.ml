@@ -1,7 +1,7 @@
 open Compiler
 open TestUtil
 
-let decorate cps_code = "(" ^ cps_code ^ " display)"
+let decorate cps_code = "(" ^ cps_code ^ " (lambda (x) x))"
 
 let () =
   let code = 
