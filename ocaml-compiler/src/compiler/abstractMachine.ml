@@ -1,7 +1,6 @@
 open AbstractMachineType
-open Util
 
-type program_type = proc_type Vector.t
+type program_type = (string, proc_type) Hashtbl.t
 
 type frame_type = {
   mutable cur : bblock_type;
@@ -15,9 +14,11 @@ type t = {
   program : program_type;
 }
 
-let rec translate_proc fname2label clo =
-  let recf c = translate_proc fname2label c in
-  let recv v = translate_value fname2label v in
+let entry_label = "entry"
+
+let rec translate_proc labels clo =
+  let recf c = translate_proc labels c in
+  let recv v = translate_value labels v in
   match clo with
     | ClosureType.Term t -> [ Value (recv t) ]
     | ClosureType.Bind (l, body) ->
@@ -37,7 +38,7 @@ let rec translate_proc fname2label clo =
                 List.append rv [ Bind (s, RA) ]
         in
         let binds = l |> List.map fn |> List.flatten in
-        let body = translate_proc fname2label body in
+        let body = translate_proc labels body in
         List.append binds body
     | ClosureType.Branch (p, t1, t2) ->
         let p = recv p in
@@ -45,8 +46,8 @@ let rec translate_proc fname2label clo =
         let t2 = recf t2 in
         [ Test (p, t1, t2) ]
     | ClosureType.Call (f, args) -> [ Call (recv f, List.map recv args) ]
-and translate_value fname2label value =
-  let recf v = translate_value fname2label v in
+and translate_value labels value =
+  let recf v = translate_value labels v in
   match value with
     | ClosureType.Int i -> Int i
     | ClosureType.Bool b -> Bool b
@@ -54,8 +55,8 @@ and translate_value fname2label value =
     | ClosureType.Closure (s, l) -> Cons (Ref s, Allocate (List.map recf l))
     | ClosureType.Var "DUMMY" -> Nil
     | ClosureType.Var s ->
-        if Hashtbl.mem fname2label s then
-          Hashtbl.find fname2label s
+        if Hashtbl.mem labels s then
+          Label s
         else
           Ref s
     | ClosureType.Nil -> Nil
@@ -70,20 +71,14 @@ and translate_closure c il = match c with
 
 let translate (clsr_prog: ClosureType.t) =
   let sz = List.length clsr_prog.procs in
-  let fname2label =
-    let tbl = Hashtbl.create sz in
-    let sl = fst (List.split clsr_prog.procs) in
-    let rec upd sl i = match sl with
-      | x :: xs -> Hashtbl.add tbl x (Label i); upd xs (i + 1)
-      | [] -> ()
-    in
-    upd sl 0;
-    Hashtbl.add tbl "entry" (Label sz);
-    tbl
+  let names = fst (List.split clsr_prog.procs) in
+  let labels =
+    let tbl = Hashtbl.create (sz + 1) in
+    List.iter (fun x -> Hashtbl.add tbl x ()) (entry_label :: names); tbl
   in
   let program =
     let trans body =
-      body |> translate_proc fname2label
+      body |> translate_proc labels
            |> fun x -> List.append x [ Return ]
     in
     let tp = 
@@ -92,24 +87,21 @@ let translate (clsr_prog: ClosureType.t) =
       |> snd
       |> List.map (fun (c, l, opt, body) -> (Some c, l, opt, trans body))
     in
-    let vec = Vector.make (sz) (None, [], None, []) in
-    let packing () =
-      let lis = ref tp in
-      for i = 0 to (sz - 1) do
-        let hd, tl = (List.hd !lis, List.tl !lis) in
-        Vector.set vec i hd; lis := tl
-      done
+    let program =
+      let tbl = Hashtbl.create sz in
+      let program = List.combine names tp in
+      List.iter (fun (x, y) -> Hashtbl.add tbl x y) program;
+      tbl
     in
-    packing ();
     let body = match clsr_prog.body with
       | ClosureType.Bind (l, Term t) -> ClosureType.Bind (l, Call (t, []))
       | _ -> raise (Invalid_argument "body")
     in
-    Vector.push_back vec (None, [], None, trans body);
-    vec
+    Hashtbl.add program entry_label (None, [], None, trans body);
+    program
   in
   let frame = {
-    cur = (fun (_, _, _, body) -> body) (Vector.rget program 0);
+    cur = (fun (_, _, _, body) -> body) (Hashtbl.find program entry_label);
     mem = Hashtbl.create 8;
   }
   in
@@ -296,9 +288,9 @@ and eval_call machine f args =
             | Nil -> produce_result machine (Bool true)
             | _ -> produce_result machine (Bool false))
       | _ -> raise (Invalid_argument ("Unknown function " ^ (Symbol.string_of_sym (PrimitiveSym p)))))
-    | Cons (Label i, clsr) ->
+    | Cons (Label l, clsr) ->
         let args = clsr :: args in
-        let carg, largs, optarg, proc = Vector.get machine.program i in
+        let carg, largs, optarg, proc = Hashtbl.find machine.program l in
         let mem = Hashtbl.create 8 in
         let binding carg largs optarg lis =
           let preprocess () = match carg with
@@ -312,14 +304,14 @@ and eval_call machine f args =
               | None -> (match l with
                 | [] -> ()
                 | _ -> raise (Invalid_argument "Arguments is so much that error occured")))
-            | (l, []) -> raise (Invalid_argument "Arguments is so less that error occured")
+            | (_, []) -> raise (Invalid_argument "Arguments is so less that error occured")
           in
           let lis = preprocess () in
           process largs lis
         in
         binding carg largs optarg args;
         let frame = { 
-          cur = (fun (_, _, _, body) -> body) (Vector.get machine.program i);
+          cur = (fun (_, _, _, body) -> body) (Hashtbl.find machine.program l);
           mem = mem;
         } 
         in
@@ -362,7 +354,7 @@ and string_of_value value = match value with
   | Bool true -> "TRUE"
   | Bool false -> "FALSE"
   | Primitive p -> Symbol.string_of_sym (PrimitiveSym p)
-  | Label i -> "LABEL" ^ (string_of_int i)
+  | Label l -> "LABEL (" ^ l ^ ")"
   | Ref s -> s
   | Allocate lis -> make_instr_str "ALLOCATE" (List.map string_of_value lis)
   | RA -> "RA"
@@ -374,19 +366,11 @@ and string_of_value value = match value with
          |> fun x -> s :: x
          |> make_instr_str "ACCESS"
 
-
-let iota n =
-  let rec aux i = 
-    if i = n then [] else i :: (aux (i + 1))
-  in
-  aux 0
-
 let string_of_program machine =
-  let len = Vector.length machine.program in
-  Vector.to_list machine.program
-  |> List.map (fun (_, _, _, body) -> body)
-  |> List.map (List.map string_of_abs)
-  |> List.combine (List.map (fun x -> "Label (" ^ (string_of_int x) ^ "):") (iota len))
+  let program = Hashtbl.fold (fun k (_, _, _, body) l -> (k, body) :: l) machine.program [] in
+  program
+  |> List.map (fun (x, y) -> (x, List.map string_of_abs y))
+  |> List.map (fun (x, y) -> ("Label (" ^ x ^ "):", y))
   |> List.map (fun (x, xs) -> x :: xs)
   |> List.map (String.concat "\n")
   |> List.fold_left (fun x y -> x ^ "\n\n" ^ y) ""

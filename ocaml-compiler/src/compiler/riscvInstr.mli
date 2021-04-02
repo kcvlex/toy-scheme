@@ -4,7 +4,6 @@ type t =
   | JAL    of { dst : reg_type; offset : int; }
   | JALR   of { base : reg_type; dst : reg_type; offset : int; }
   | BEQ    of branch_type
-  | BEQ    of branch_type
   | BNE    of branch_type
   | BLT    of branch_type
   | BGE    of branch_type

@@ -9,7 +9,7 @@ and value_type =
   | Int of int
   | Bool of bool
   | Primitive of SymbolType.primitive_sym
-  | Label of int
+  | Label of string
   | Ref of string
   | Allocate of value_type list
   | RA
