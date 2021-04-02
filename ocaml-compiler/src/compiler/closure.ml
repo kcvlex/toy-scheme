@@ -69,7 +69,6 @@ and collect_fv_term term name defined tbl = match term with
 let collect_fv anf = 
   let tbl = Hashtbl.create 8 in
   collect_fv anf "DUMMY" SS.empty tbl;
-  Hashtbl.iter (fun x y -> Printf.printf "%s : %s\n" x (String.concat " " (SS.elements y))) tbl;
   tbl
 
 let convert_term term = match term with

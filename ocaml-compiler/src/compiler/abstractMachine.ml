@@ -17,49 +17,53 @@ type t = {
   program : program_type;
 }
 
-let rec translate_proc fname2label clo = match clo with
-  | ClosureType.Term t -> [] (* Ignore unnecessary term *)
-  | ClosureType.Bind (l, body) ->
-      let fn st = 
-        let s, t = st in
-        match t with
-          | ClosureType.Term (ClosureType.Int i) -> [ Move (s, Int i) ]
-          | ClosureType.Term (ClosureType.Bool b) -> [ Move (s, Bool b) ]
-          | ClosureType.Term (ClosureType.Primitive p) -> [ Move (s, Primitive p) ]
-          | ClosureType.Term (ClosureType.Quote a) -> [ Bind (s, Quote a) ]
-          | ClosureType.Term ((ClosureType.ClosureRef _) as c) -> [ Bind (s, translate_closure c []) ]
-          | ClosureType.Term (ClosureType.Closure (s, cl)) ->
-              [ Bind (s, Allocate (List.map translate_value cl)) ]
-          | _ ->
-              let rv = translate_proc fname2label t in
-              List.append rv [ Bind (s, RA) ]
-      in
-      let binds = l |> List.map fn |> List.flatten in
-      let body = translate_proc fname2label body in
-      List.append binds body
-  | ClosureType.Branch (p, t1, t2) ->
-      let p = translate_value p in
-      let t1 = translate_proc fname2label t1 in
-      let t2 = translate_proc fname2label t2 in
-      [ Test (p, t1, t2) ]
-  | ClosureType.Call (t, args) -> 
-      let args = List.map translate_value args in
-      match t with
-        | ClosureType.Var s ->
-            let label = Hashtbl.find fname2label s in
-            [ Call (label, args); Return ]
-        | ClosureType.Primitive s -> [ Call (Primitive s, args); Return ]
-        | _ -> raise (Invalid_argument "Not function")
-and translate_value term = match term with
-  | ClosureType.Int i -> Int i
-  | ClosureType.Bool b -> Bool b
-  | ClosureType.Primitive s -> Primitive s
-  | ClosureType.Closure (s, l) -> Cons (Ref s, Allocate (List.map translate_value l))
-  | ClosureType.Var s -> Ref s
-  | ClosureType.Nil -> Nil
-  | ClosureType.Quote a -> Quote a
-  | ClosureType.ClosureRef _ -> translate_closure term []
-  | _ -> raise (Invalid_argument "UNIMPLED")
+let rec translate_proc fname2label clo =
+  let recf c = translate_proc fname2label c in
+  let recv v = translate_value fname2label v in
+  match clo with
+    | ClosureType.Term t -> [ Value (recv t) ]
+    | ClosureType.Bind (l, body) ->
+        let fn st = 
+          let s, t = st in
+          match t with
+            | ClosureType.Term (ClosureType.Int i) -> [ Move (s, Int i) ]
+            | ClosureType.Term (ClosureType.Bool b) -> [ Move (s, Bool b) ]
+            | ClosureType.Term (ClosureType.Primitive p) -> [ Move (s, Primitive p) ]
+            | ClosureType.Term (ClosureType.Quote a) -> [ Bind (s, Quote a) ]
+            | ClosureType.Term ((ClosureType.ClosureRef _) as c) -> [ Bind (s, translate_closure c []) ]
+            | ClosureType.Term (ClosureType.Closure (c, cl)) ->
+                let c = recv (ClosureType.Var c) in
+                [ Bind (s, Cons (c, Allocate (List.map recv cl))) ]
+            | _ ->
+                let rv = recf t in
+                List.append rv [ Bind (s, RA) ]
+        in
+        let binds = l |> List.map fn |> List.flatten in
+        let body = translate_proc fname2label body in
+        List.append binds body
+    | ClosureType.Branch (p, t1, t2) ->
+        let p = recv p in
+        let t1 = recf t1 in
+        let t2 = recf t2 in
+        [ Test (p, t1, t2) ]
+    | ClosureType.Call (f, args) -> [ Call (recv f, List.map recv args) ]
+and translate_value fname2label value =
+  let recf v = translate_value fname2label v in
+  match value with
+    | ClosureType.Int i -> Int i
+    | ClosureType.Bool b -> Bool b
+    | ClosureType.Primitive s -> Primitive s
+    | ClosureType.Closure (s, l) -> Cons (Ref s, Allocate (List.map recf l))
+    | ClosureType.Var "DUMMY" -> Nil
+    | ClosureType.Var s ->
+        if Hashtbl.mem fname2label s then
+          Hashtbl.find fname2label s
+        else
+          Ref s
+    | ClosureType.Nil -> Nil
+    | ClosureType.Quote a -> Quote a
+    | ClosureType.ClosureRef _ -> translate_closure value []
+    | _ -> raise (Invalid_argument "UNIMPLED")
 and translate_closure c il = match c with
   | ClosureType.ClosureRef (cn, i) -> translate_closure cn (i :: il)
   | ClosureType.Var s -> AccessClosure (s, il)
@@ -90,9 +94,20 @@ let translate (clsr_prog: ClosureType.t) =
       |> snd
       |> List.map (fun (c, l, opt, body) -> (Some c, l, opt, trans body))
     in
-    let vec = Vector.make (sz + 1) (None, [], None, []) in
-    List.iter (Vector.push_back vec) tp;
-    Vector.push_back vec (None, [], None, trans clsr_prog.body);
+    let vec = Vector.make (sz) (None, [], None, []) in
+    let packing () =
+      let lis = ref tp in
+      for i = 0 to (sz - 1) do
+        let hd, tl = (List.hd !lis, List.tl !lis) in
+        Vector.set vec i hd; lis := tl
+      done
+    in
+    packing ();
+    let body = match clsr_prog.body with
+      | ClosureType.Bind (l, Term t) -> ClosureType.Bind (l, Call (t, []))
+      | _ -> raise (Invalid_argument "body")
+    in
+    Vector.push_back vec (None, [], None, trans body);
     vec
   in
   let frame = {
@@ -153,8 +168,7 @@ let rec follow_cons cons idxlis = match idxlis with
 
 let rec flat_cons cons = match cons with
   | Cons (car, cdr) -> car :: (flat_cons cdr)
-  | Nil -> []
-  | _ -> raise (Invalid_argument "must be cons")
+  | v -> []
 
 let rec cons_of_list lis = match lis with
   | x :: xs -> Cons (x, cons_of_list xs)
@@ -167,8 +181,6 @@ let rec eval_step machine = match machine.frames with
       match blk with
         | [] -> raise (Invalid_argument "must return")
         | hd :: tl ->
-          f.cur <- tl;
-          machine.frames <- f :: fx;
           match hd with
             | Bind (s, v) ->
                 eval_value machine v;
@@ -187,11 +199,20 @@ let rec eval_step machine = match machine.frames with
                 in
                 advance machine;
                 List.iter (fun x -> insert_instr machine x) (List.rev (if p then t1 else t2))
+            | Value v -> advance machine; eval_value machine v
             | Return -> machine.frames <- List.tl machine.frames
-            | Call (f, args) -> eval_call machine f args
+            | Call (f, args) -> advance machine; eval_call machine f args
 and eval_value machine v = match v with
-  | Int _ | Bool _  | Primitive _ | Label _ | Nil | Quote _ | Cons _-> produce_result machine v
-  | Ref s -> 
+  | Int _ | Bool _  | Primitive _ | Label _ | Nil | Quote _ -> produce_result machine v
+  | Cons (car, cdr) ->
+      let car = 
+        eval_value machine car; consume_result machine
+      in
+      let cdr =
+        eval_value machine cdr; consume_result machine
+      in
+      produce_result machine (Cons (car, cdr))
+  | Ref s ->
       let v = Hashtbl.find (List.hd machine.frames).mem s in
       produce_result machine v
   | Allocate vl ->
@@ -243,28 +264,42 @@ and eval_call machine f args =
           | EQ -> let a, b = restrict_2arg args in produce_result machine (Bool (a = b)))
       | APPLY ->
           let f, args = restrict_2arg args in
-          produce_result machine args;
-          let args = consume_result machine in
-          insert_instr machine (Call (f, (flat_cons args)));
-          eval_step machine
+          eval_call machine f (flat_cons args)
       | CAR | CDR ->
           let arg = restrict_1arg args in
-          produce_result machine arg;
-          let arg = consume_result machine in
           (match arg with
             | Cons (car, cdr) -> produce_result machine (if p = CAR then car else cdr)
             | _ -> raise (Invalid_argument "must be cons"))
       | DISPLAY ->
           let arg = restrict_1arg args in
-          produce_result machine arg;
-          let arg = consume_result machine in
           (match arg with
             | Int i -> print_endline (string_of_int i)
             | Bool true -> print_endline "#t"
             | Bool false -> print_endline "#f"
             | _ -> raise (Invalid_argument "display"))
-      | _ -> raise (Invalid_argument ("Unkonwn function " ^ (Symbol.string_of_sym (PrimitiveSym p)))))
+      | CONS ->
+          let car, cdr = restrict_2arg args in
+          produce_result machine (Cons (car, cdr))
+      | LIST -> produce_result machine (cons_of_list args)
+      | MAP -> raise (Invalid_argument "UNIMPLED : MAP")
+      | LISTREF ->
+          let l, i = restrict_2arg args in
+          let rec dfs l i = match (l, i) with
+            | Cons (car, _), 0 -> car
+            | Cons (_, cdr), _ -> dfs cdr (i - 1)
+            | _ -> raise (Invalid_argument "dfs of LISTREF")
+          in
+          (match i with
+            | Int i -> produce_result machine (dfs l i)
+            | _ -> raise (Invalid_argument "LISTREF"))
+      | NULL ->
+          let arg = restrict_1arg args in
+          (match arg with
+            | Nil -> produce_result machine (Bool true)
+            | _ -> produce_result machine (Bool false))
+      | _ -> raise (Invalid_argument ("Unknown function " ^ (Symbol.string_of_sym (PrimitiveSym p)))))
     | Cons (Label i, clsr) ->
+        let args = clsr :: args in
         let carg, largs, optarg, proc = Vector.get machine.program i in
         let mem = Hashtbl.create 8 in
         let binding carg largs optarg lis =
@@ -274,28 +309,86 @@ and eval_call machine f args =
           in
           let rec process names args = match (names, args) with
             | (x :: xs, y :: ys) -> Hashtbl.add mem x y; process xs ys
-            | ([], []) -> ()
             | ([], l) -> (match optarg with
               | Some o -> Hashtbl.add mem o (cons_of_list l)
-              | None -> raise (Invalid_argument "Arguments is too much to error"))
-            | (l, []) -> raise (Invalid_argument "Arguments is too less to error")
+              | None -> (match l with
+                | [] -> ()
+                | _ -> raise (Invalid_argument "Arguments is so much that error occured")))
+            | (l, []) -> raise (Invalid_argument "Arguments is so less that error occured")
           in
           let lis = preprocess () in
           process largs lis
         in
         binding carg largs optarg args;
         let frame = { 
-          cur = (fun (_, _, _, body) -> body) (Vector.rget machine.program i);
+          cur = (fun (_, _, _, body) -> body) (Vector.get machine.program i);
           mem = mem;
         } 
         in
-        machine.frames <- frame :: machine.frames;
-        eval_step machine
+        machine.frames <- frame :: machine.frames
 
 let rec eval machine =
   if List.length machine.frames = 0 then 
-    () 
+    ()
   else begin
     eval_step machine;
     eval machine
   end
+
+let make_instr_str label lis =
+  lis |> String.concat ", "
+      |> fun x -> label ^ " (" ^ x ^ ")"
+
+let rec string_of_abs abs = match abs with
+  | Bind (s, v) -> make_instr_str "BIND" [ s; string_of_value v ]
+  | Move (s, v) -> make_instr_str "MOVE" [ s; string_of_value v ]
+  | Test (p, t1, t2) ->
+      let p = string_of_value p in
+      let indent = "      " in
+      let f t = 
+        t |> List.map string_of_abs
+          |> String.concat ", "
+          |> fun x -> indent ^ "[ " ^ x ^ " ]"
+      in
+      let t1 = f t1 in
+      let t2 = f t2 in
+      String.concat "\n" [ "TEST (" ^ p; t1; (t2 ^ ")") ]
+  | Return -> "RETURN"
+  | Value v -> make_instr_str "VALUE" [ string_of_value v ]
+  | Call (f, args) ->
+      let lis = f :: args in
+      lis |> List.map string_of_value
+          |> make_instr_str "CALL"
+and string_of_value value = match value with
+  | Int i -> string_of_int i
+  | Bool true -> "TRUE"
+  | Bool false -> "FALSE"
+  | Primitive p -> Symbol.string_of_sym (PrimitiveSym p)
+  | Label i -> "LABEL" ^ (string_of_int i)
+  | Ref s -> s
+  | Allocate lis -> make_instr_str "ALLOCATE" (List.map string_of_value lis)
+  | RA -> "RA"
+  | Nil -> "NULL"
+  | Quote a -> "QUOTE (" ^ (Ast.code_of_ast a) ^ ")"
+  | Cons (car, cdr) -> make_instr_str "CONS" (List.map string_of_value [ car; cdr ])
+  | AccessClosure (s, il) -> 
+      il |> List.map string_of_int
+         |> fun x -> s :: x
+         |> make_instr_str "ACCESS"
+
+
+let iota n =
+  let rec aux i = 
+    if i = n then [] else i :: (aux (i + 1))
+  in
+  aux 0
+
+let string_of_program machine =
+  let len = Vector.length machine.program in
+  Vector.to_list machine.program
+  |> List.map (fun (_, _, _, body) -> body)
+  |> List.map (List.map string_of_abs)
+  |> List.combine (List.map (fun x -> "Label (" ^ (string_of_int x) ^ "):") (iota len))
+  |> List.map (fun (x, xs) -> x :: xs)
+  |> List.map (String.concat "\n")
+  |> List.fold_left (fun x y -> x ^ "\n\n" ^ y) ""

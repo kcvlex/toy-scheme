@@ -3,6 +3,7 @@ type t =
   | Move of string * value_type
   | Test of value_type * t list * t list
   | Return
+  | Value of value_type
   | Call of value_type * value_type list
 and value_type =
   | Int of int

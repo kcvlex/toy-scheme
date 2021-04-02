@@ -25,7 +25,7 @@ let add_call s =
  
 let () =
   let code = 
-    source3 |> Ast.make_ast
+    source2 |> Ast.make_ast
             |> Ast.normalize
             |> Cps.cps_trans
             |> AdmBetaReduction.normalize

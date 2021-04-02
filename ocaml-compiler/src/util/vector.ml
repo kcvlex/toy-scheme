@@ -8,7 +8,7 @@ let empty () = { arr = [||]; size = 0; cap = 0; }
 
 let extend_cap vec init =
   if vec.cap = 0 then begin
-    vec.cap <- 1;
+    vec.cap <- 2;
     vec.arr <- Array.make 2 init
   end else begin
     let arr = Array.make (2 * vec.cap) init in
