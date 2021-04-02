@@ -1,0 +1,18 @@
+(ocamllex lexer)
+
+(menhir
+  (modules parser))
+  
+(library
+  (libraries util)
+  (modules_without_implementation symbolType
+                                  astType
+                                  cpsType
+                                  closureType
+                                  abstractMachineType
+                                  anfType)
+  (name compiler))
+
+(env
+  (dev
+    (flags (:standard -warn-error -A))))

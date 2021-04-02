@@ -1,0 +1,12 @@
+(tests
+  (libraries compiler)
+  (names testAst
+         testCps
+         testBetaReduction
+         testANormalize
+         testClosure
+         testAbstractMachine
+         testDecompiler))
+(env
+  (dev
+    (flags (:standard -warn-error -A))))
