@@ -17,3 +17,5 @@ and value_type =
   | Quote of AstType.t
   | Cons of value_type * value_type
   | AccessClosure of string * int list
+and bblock_type = t list
+and proc_type = string option * string list * string option * bblock_type

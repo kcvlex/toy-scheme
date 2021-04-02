@@ -1,8 +1,6 @@
 open AbstractMachineType
 open Util
 
-type bblock_type = AbstractMachineType.t list
-type proc_type = string option * string list * string option * bblock_type
 type program_type = proc_type Vector.t
 
 type frame_type = {
