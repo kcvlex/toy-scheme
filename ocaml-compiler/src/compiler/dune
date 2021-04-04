@@ -10,7 +10,7 @@
                                   cpsType
                                   closureType
                                   abstractMachineType
-                                  threeAddressCode
+                                  threeAddressCodeType
                                   riscvInstr
                                   anfType)
   (name compiler))

@@ -1,7 +1,12 @@
-type t =
+type t = (string, proc_type) Hashtbl.t
+and proc_type = clsr_arg_type * common_arg_type * extend_arg_type * instr_type list
+and clsr_arg_type = string option
+and common_arg_type = string list
+and extend_arg_type = string option
+and instr_type =
   | Bind of string * value_type
   | Move of string * value_type
-  | Test of value_type * t list * t list
+  | Test of value_type * instr_type list * instr_type list
   | Return
   | Value of value_type
   | Call of value_type * value_type list
@@ -17,5 +22,3 @@ and value_type =
   | Quote of AstType.t
   | Cons of value_type * value_type
   | AccessClosure of string * int list
-and bblock_type = t list
-and proc_type = string option * string list * string option * bblock_type

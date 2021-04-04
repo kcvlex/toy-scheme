@@ -86,7 +86,7 @@ let rec merge_lets_aux anf = match anf with
   | Bind (lis, Bind ([ (s, t) ], body)) ->
       let lis = (s, t) :: lis in
       merge_lets_aux (Bind (lis, body))
-  | Bind (lis, Bind _) -> raise (Invalid_argument "Bind must be 1")
+  | Bind (_, Bind _) -> raise (Invalid_argument "Bind must be 1")
   | Bind (lis, body) ->
       let a, b = List.split lis in
       let lis =

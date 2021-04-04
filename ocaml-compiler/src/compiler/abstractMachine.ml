@@ -1,9 +1,7 @@
 open AbstractMachineType
 
-type program_type = (string, proc_type) Hashtbl.t
-
 type frame_type = {
-  mutable cur : bblock_type;
+  mutable cur : AbstractMachineType.instr_type list;
   mutable mem : (string, value_type) Hashtbl.t;
 }
 
@@ -11,7 +9,7 @@ type t = {
   mutable heap : value_type list; (* Excpect Cons *)
   mutable frames : frame_type list;
   mutable ra : value_type option;
-  program : program_type;
+  program : AbstractMachineType.t;
 }
 
 let entry_label = "entry"
@@ -69,6 +67,18 @@ and translate_closure c il = match c with
   | _ -> raise (Invalid_argument "AAA")
 
 
+let rec relocate_return seq = match seq with
+  | Test (p, t1, t2) :: Return :: xs ->
+      let t1 = relocate_return (List.append t1 [ Return ]) in
+      let t2 = relocate_return (List.append t2 [ Return ]) in
+      let test = Test (p, t1, t2) in
+      let xs = relocate_return xs in
+      test :: xs
+  | x :: xs -> x :: (relocate_return xs)
+  | [] -> []
+
+
+
 let translate (clsr_prog: ClosureType.t) =
   let sz = List.length clsr_prog.procs in
   let names = fst (List.split clsr_prog.procs) in
@@ -80,6 +90,7 @@ let translate (clsr_prog: ClosureType.t) =
     let trans body =
       body |> translate_proc labels
            |> fun x -> List.append x [ Return ]
+           |> relocate_return
     in
     let tp = 
       clsr_prog.procs 
@@ -127,7 +138,7 @@ let push_mem machine n v =
 let advance machine =
   let hd, tl = (List.hd machine.frames, List.tl machine.frames) in
   (match hd.cur with
-    | x :: xs -> hd.cur <- xs
+    | _ :: xs -> hd.cur <- xs
     | [] -> raise (Invalid_argument "must return"));
   machine.frames <- (hd :: tl)
 
@@ -158,7 +169,7 @@ let rec follow_cons cons idxlis = match idxlis with
 
 let rec flat_cons cons = match cons with
   | Cons (car, cdr) -> car :: (flat_cons cdr)
-  | v -> []
+  | _ -> []
 
 let rec cons_of_list lis = match lis with
   | x :: xs -> Cons (x, cons_of_list xs)
@@ -166,11 +177,11 @@ let rec cons_of_list lis = match lis with
 
 let rec eval_step machine = match machine.frames with
   | [] -> ()
-  | f :: fx -> 
+  | f :: _ -> 
       let blk = f.cur in 
       match blk with
         | [] -> raise (Invalid_argument "must return")
-        | hd :: tl ->
+        | hd :: _ ->
           match hd with
             | Bind (s, v) ->
                 eval_value machine v;
@@ -210,7 +221,7 @@ and eval_value machine v = match v with
         | x :: xs ->
             eval_value machine x;
             let car = consume_result machine in
-            let cdr = fn xs in
+            let _ = fn xs in
             let cdr = consume_result machine in
             let cons = Cons (car, cdr) in
             produce_result machine cons
@@ -290,7 +301,7 @@ and eval_call machine f args =
       | _ -> raise (Invalid_argument ("Unknown function " ^ (Symbol.string_of_sym (PrimitiveSym p)))))
     | Cons (Label l, clsr) ->
         let args = clsr :: args in
-        let carg, largs, optarg, proc = Hashtbl.find machine.program l in
+        let carg, largs, optarg, _ = Hashtbl.find machine.program l in
         let mem = Hashtbl.create 8 in
         let binding carg largs optarg lis =
           let preprocess () = match carg with
@@ -366,8 +377,8 @@ and string_of_value value = match value with
          |> fun x -> s :: x
          |> make_instr_str "ACCESS"
 
-let string_of_program machine =
-  let program = Hashtbl.fold (fun k (_, _, _, body) l -> (k, body) :: l) machine.program [] in
+let string_of_program program =
+  let program = Hashtbl.fold (fun k (_, _, _, body) l -> (k, body) :: l) program [] in
   program
   |> List.map (fun (x, y) -> (x, List.map string_of_abs y))
   |> List.map (fun (x, y) -> ("Label (" ^ x ^ "):", y))

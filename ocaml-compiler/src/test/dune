@@ -6,6 +6,7 @@
          testANormalize
          testClosure
          testAbstractMachine
+         testLivness
          testDecompiler))
 (env
   (dev
