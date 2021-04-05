@@ -1,27 +1,26 @@
-type ('a, 'b) t
+type 'a t
 
-val make : bool -> ('a, 'b) t
+val make : bool -> 'a t
 
-val set_node : ('a, 'b) t -> 'a -> 'b -> unit
+val add_edge : 'a t -> 'a -> 'a -> unit
 
-val add_edge : ('a, 'b) t -> 'a -> 'a -> unit
+let rm_node : 'a t -> 'a -> unit
 
-let rm_node : ('a, 'b) t -> 'a -> unit
+val rm_edge : 'a t -> 'a -> 'a -> unit
 
-val rm_edge : ('a, 'b) t -> 'a -> 'a -> unit
+val contraction : 'a t -> 'a -> 'a -> unit
 
-val get_nodes : ('a, 'b) t -> 'a list
+(* representative of each group *)
+val nodes : 'a t -> 'a list
 
-val succ : ('a, 'b) t -> 'a -> 'a list
+val succ : 'a t -> 'a -> 'a list
 
-val pred : ('a, 'b) t -> 'a -> 'a list
+val pred : 'a t -> 'a -> 'a list
 
-val get : ('a, 'b) t -> 'a -> 'b
+val has_edge : 'a t -> 'a -> 'a -> bool
 
-val has_edge : ('a, 'b) t -> 'a -> 'a -> bool
+val degree : 'a t -> 'a -> int
 
-val degree : ('a, 'b) t -> 'a -> int
+val length : 'a t -> int
 
-val length : ('a, 'b) t -> int
-
-val dump : ('a, 'b) t -> ('a -> string) -> string
+val dump : 'a t -> ('a -> string) -> string

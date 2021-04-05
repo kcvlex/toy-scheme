@@ -4,9 +4,9 @@ open ThreeAddressCodeType
 
 type t = {
   reg_num : int * int * int;
-  intrf_g : (reg_type, bool) Graph.t;
+  rsum : int;
+  intrf_g : (reg_type, unit) Graph.t;
   proc : instr_type Vector.t;
-  liveness : Liveness.t;
   move_pair : (reg_type, reg_type) Hashtbl.t;
   move_related : reg_type Hashtbl.t;
   freezed : reg_set;
@@ -121,9 +121,9 @@ let build reg_num vec ptbl =
   in
   {
     reg_num = alloc.reg_num;
+    rsum = (fun (x, y, z) -> x + y + z) reg_num;
     proc = vec;
     intrf_g = g;
-    liveness = liveness;
     move_pair = mp;
     move_related = mr;
     freezed = Hashtbl.create 2;
@@ -131,8 +131,105 @@ let build reg_num vec ptbl =
     stack = Stack.create ()
   }
 
-let sum3 (a, b, c) = a + b + c
+(* FIXME *)
+let check_coalesce alloc n1 n2 =
+  let set1 = Hashtbl.copy (Graph.succ alloc.instr_g n1) in
+  let set2 = Graph.succ alloc.instr_g n2 in
+  Hashtbl.iter (fun x _ -> Hashtbl.replace set1 x) set2;
+  (Hashtbl.length set1) < alloc.rsum
+
+let exec_coalesce alloc dst src =
+  Graph.contraction alloc.intrf_g dst src;
+  Hashtbl.remove alloc.move_pair (dst, src)
+
+let sort_by_deg alloc set =
+  set |> fun s -> Hashtbl.fold (fun x _ l -> (x, Graph.degree alloc.intrf_g x)) s []
+      |> List.sort (fun x y -> (snd x) - (snd y))
 
 let simplify alloc =
   let rsum = sum3 alloc.reg_num in
-  let nodes = Graph.get_nodes alloc intrf_g in
+  let nodes = Graph.nodes alloc intrf_g in
+  let deg = 
+    nodes
+    |> List.filter (fun x -> not (Hashtbl.mem alloc.move_related x))
+    |> List.map (fun x -> (x, Graph.degree alloc.intrf_g x))
+    |> List.sort (fun x y -> (snd x) - (snd y))
+  in
+  let rec rm_node lis update = match lis with
+    | (n, d) :: xs when d < rsum ->
+        Graph.rm_node alloc.intrf_g n;
+        Stack.push n alloc.stack;
+        rm_node xs true
+    | _ -> update
+  in
+  rm_node deg false
+
+(* FIXME *)
+let pickup_freeze alloc =
+  let lis = sort_by_deg alloc alloc.move_related in
+  if List.length lis = 0 then
+    None
+  else
+    Some (lis |> List.hd |> fst)
+
+let coalesce alloc =
+  let mplis = Hashtbl.fold (fun x _ l -> x :: l) alloc.move_pair [] in
+  let rec col lis = match lis with
+    | (dst, src) :: col ->
+        if check_coalesce alloc src dst then begin
+          exec_coalesce alloc dst src;
+          true
+        end else
+          col xs
+    | [] -> false
+  in
+  col mplis
+
+(* FIXME *)
+let pickup_spill alloc =
+  let lis = sort_by_deg alloc (Graph.nodes alloc.intrf_g) in
+  let lis = List.rev lis in
+  List.hd lis
+
+let filter_move_pair f alloc =
+  let copy = Hashtbl.copy alloc.move_pair in
+  let rm (dst, src) =
+    if (f dst) and (f src) then
+      ()
+    else
+      Hashtbl.remove alloc.move_pair (dst, src)
+  in
+  Hashtbl.iter rm copy
+
+let freeze alloc =
+  let fr = pickup_freeze alloc in
+  match fr with
+    | Some r ->
+        filter_move_pair (fun x -> r != x) alloc;
+        true
+    | None -> false
+
+let spill alloc =
+  let r = pickup_spill alloc in
+  Hashtbl.add alloc.spilled r ();
+  filter_move_pair (fun x -> r != x) alloc
+
+let remove_all_nodes alloc =
+  let rec step () =
+    let update = simplify alloc in
+    let update = update && (coalesce alloc) in
+    if update then
+      ()
+    else begin
+      let update = freeze alloc in
+      if update then
+        ()
+      else
+        spill alloc
+    end
+  in
+  while 0 < Graph.length (g.intrf_g) do
+    step ()
+  done
+
+let coloring alloc =
