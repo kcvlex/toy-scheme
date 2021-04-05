@@ -385,3 +385,5 @@ let string_of_program program =
   |> List.map (fun (x, xs) -> x :: xs)
   |> List.map (String.concat "\n")
   |> List.fold_left (fun x y -> x ^ "\n\n" ^ y) ""
+
+let string_of_machine machine = string_of_program machine.program

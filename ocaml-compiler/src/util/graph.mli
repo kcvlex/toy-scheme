@@ -15,3 +15,5 @@ val pred : ('a, 'b) t -> 'a -> 'a list
 val get : ('a, 'b) t -> 'a -> 'b
 
 val length : ('a, 'b) t -> int
+
+val dump : ('a, 'b) t -> string

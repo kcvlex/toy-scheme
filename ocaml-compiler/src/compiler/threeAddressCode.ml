@@ -226,7 +226,7 @@ let from_abs_program program =
 let vec_of_list lis =
   let ret = Vector.empty () in
   let rec aux lis = match lis with
-    | x :: xs -> Vector.push_back ret x
+    | x :: xs -> Vector.push_back ret x; aux xs
     | [] -> ()
   in
   aux lis; ret
@@ -237,13 +237,14 @@ let sample_program =
   let c = Virtual 2 in
   let d = Virtual 3 in
   let proc = [
-    Move (a, Int 1,                       0);
+    Move     (a, Int 1,                   0);
     PrimCall (b, ADD, [ Reg a; Int 1 ],   1);
     PrimCall (c, ADD, [ Reg c; Reg b ],   2);
     PrimCall (a, MUL, [ Reg b; Int 2 ],   3);
     PrimCall (d, LESS, [ Reg a; Int 10 ], 4);
-    Test (Reg d, JumpLabel "1",           5);
-    Return 6 
+    Jump     (JumpLabel "1",              5);
+    Move     (RV, Reg c,                  6);
+    Return   (                            7)
   ]
   in
   let ptbl = Hashtbl.create 1 in

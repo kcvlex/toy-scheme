@@ -27,8 +27,8 @@ let add_node g a b =
   Vector.push_back g.attr b
 
 let add_edge_aux g id1 id2 = 
-  Hashtbl.add (Vector.get g.edges id1) id2 ();
-  Hashtbl.add (Vector.get g.redges id2) id1 ()
+  Hashtbl.replace (Vector.get g.edges id1) id2 ();
+  Hashtbl.replace (Vector.get g.redges id2) id1 ()
 
 let rm_edge_aux g id1 id2 = 
   Hashtbl.remove (Vector.get g.edges id1) id2;
@@ -39,21 +39,22 @@ let get_id g a = Hashtbl.find g.nodes a
 let add_edge g src dst =
   let id1 = get_id g src in
   let id2 = get_id g dst in
-  if g.directed then
+  if g.directed then begin
     add_edge_aux g id1 id2
-  else
+  end else begin
     add_edge_aux g id1 id2;
     add_edge_aux g id2 id1
+  end
 
 let rm_edge g src dst =
   let id1 = get_id g src in
   let id2 = get_id g dst in
-  if g.directed then
+  if g.directed then begin
     rm_edge_aux g id1 id2
-  else
+  end else begin
     rm_edge_aux g id1 id2;
     rm_edge_aux g id2 id1
-
+  end
 let succ g a =
   let id = get_id g a in
   let edges = Vector.get g.edges id in
@@ -71,3 +72,16 @@ let get g a =
   Vector.get g.attr id
 
 let length g = Hashtbl.length g.nodes
+
+let dump g =
+  let len = length g in
+  let rec make i = 
+    if i = len then
+      []
+    else
+      let suc = Vector.get g.edges i in
+      let suc = Hashtbl.fold (fun x _ l -> x :: l) suc [] in
+      let s = Printf.sprintf "%d -> [ %s ]" i (String.concat " " (List.map string_of_int suc)) in
+      s :: (make (i + 1))
+  in
+  String.concat "\n" (make 0)

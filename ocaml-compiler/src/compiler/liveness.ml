@@ -17,41 +17,46 @@ let make_cfg labeling vec =
     Graph.add_node cfg i ()
   done;
   for i = 0 to len - 1 do
+    let add_seq () =
+      if i + 1 < len then Graph.add_edge cfg i (i + 1) else ()
+    in
     let instr = Vector.get vec i in
     match instr with
       | Return _ -> ()
       | Test (_, JumpLabel s, _) -> 
           Graph.add_edge cfg i (Hashtbl.find labeling s);
-          Graph.add_edge cfg i (i + 1)
+          add_seq ()
       | Jump (JumpLabel s, _) ->
           Graph.add_edge cfg i (Hashtbl.find labeling s);
-          Graph.add_edge cfg i (i + 1)
-      | _ -> Graph.add_edge cfg i (i + 1)
+          add_seq ()
+      | _ -> add_seq ()
   done;
   cfg
 
 let calc_use_def vec =
   let len = Vector.length vec in
-  let def = Vector.make len (Hashtbl.create 2) in
-  let use = Vector.make len (Hashtbl.create 2) in
-  let update_def i v = Hashtbl.add (Vector.get def i) v () in
-  let update_use i v = match v with
-    | Reg r -> Hashtbl.add (Vector.get use i) r ()
-    | _ -> ()
-  in
+  let def = Vector.empty () in
+  let use = Vector.empty () in
   for i = 0 to len - 1 do
+    Vector.push_back def (Hashtbl.create 2);
+    Vector.push_back use (Hashtbl.create 2);
+    let update_def v = Hashtbl.replace (Vector.get def i) v () in
+    let update_use v = match v with
+      | Reg r -> Hashtbl.replace (Vector.get use i) r ()
+      | _ -> ()
+    in
     let instr = Vector.get vec i in
     match instr with
-      | Bind (r, v, _) -> update_def i r; update_use i v
-      | Move (r, v, _) -> update_def i r; update_use i v
-      | Test (v, u, _) -> update_use i v; update_use i u;
-      | Jump (v, _) -> update_use i v;
+      | Bind (r, v, _) -> update_def r; update_use v
+      | Move (r, v, _) -> update_def r; update_use v
+      | Test (v, u, _) -> update_use v; update_use u
+      | Jump (v, _) -> update_use v
       | Return _ -> ()
-      | Load (r, v, _, _) -> update_def i r; update_use i v;
-      | Store (r, v, _, _) -> update_def i r; update_use i v;
-      | PrimCall (r, _, vl, _) -> update_def i r; List.iter (fun v -> update_use i v) vl
+      | Load (r, v, _, _) -> update_def r; update_use v
+      | Store (r, v, _, _) -> update_def r; update_use v
+      | PrimCall (r, _, vl, _) -> update_def r; List.iter (fun v -> update_use v) vl
   done;
-  (def, use)
+  (use, def)
 
 let comp_reg_set tbl1 tbl2 =
   if Hashtbl.length tbl1 != Hashtbl.length tbl2 then
@@ -60,7 +65,7 @@ let comp_reg_set tbl1 tbl2 =
     Hashtbl.fold (fun x _ acc -> acc && (Hashtbl.mem tbl2 x)) tbl1 true
 
 let union tbl1 tbl2 =
-  Hashtbl.iter (fun x y -> Hashtbl.add tbl1 x y) tbl2
+  Hashtbl.iter (fun x y -> Hashtbl.replace tbl1 x y) tbl2
 
 let calc_liveness use def cfg =
   let len = Graph.length cfg in
@@ -71,8 +76,8 @@ let calc_liveness use def cfg =
     let pos = Hashtbl.copy (Vector.get out_set i) in
     let is = Hashtbl.copy (Vector.get out_set i) in
     let os = Hashtbl.create 2 in
-    Hashtbl.iter (fun x _ -> Hashtbl.remove is x) def;
-    Hashtbl.iter (fun x _ -> Hashtbl.add is x ()) use;
+    Hashtbl.iter (fun x _ -> Hashtbl.remove is x) (Vector.get def i);
+    Hashtbl.iter (fun x _ -> Hashtbl.replace is x ()) (Vector.get use i);
     let succ = Graph.succ cfg i in
     List.iter (fun s -> union os (Vector.get in_set s)) succ;
     Vector.set in_set i is; Vector.set out_set i os;
@@ -101,5 +106,9 @@ let analyze (_, labeling, instr_vec) =
 let live_in lv i = Vector.get lv.in_set i
 
 let live_out lv i = Vector.get lv.out_set i
+
+let get_use lv i = Vector.get lv.use i
+
+let get_def lv i = Vector.get lv.def i
 
 let length lv = Graph.length lv.cfg
