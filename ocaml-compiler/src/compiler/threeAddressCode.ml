@@ -248,5 +248,6 @@ let sample_program =
   ]
   in
   let ptbl = Hashtbl.create 1 in
+  Hashtbl.add ptbl "entry" 0;
   Hashtbl.add ptbl "1" 1;
   (Hashtbl.create 0, ptbl, vec_of_list proc)

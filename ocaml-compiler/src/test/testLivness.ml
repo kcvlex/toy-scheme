@@ -23,7 +23,7 @@ let make_vec lis =
 
 let () =
   let sample = ThreeAddressCode.sample_program in
-  let liveness = Liveness.analyze sample in
+  let liveness = Liveness.analyze sample "entry" in
   let correct = [
     ([ 2 ],    [ 0; 2 ]);
     ([ 0; 2 ], [ 1; 2 ]); 
@@ -50,12 +50,3 @@ let () =
     else
       ()
   done
- 
- (*
-  let tbl2list tbl =
-    Hashtbl.fold (fun x _ l -> x :: l) tbl []
-  in
-  let regset2str tbl =
-    tbl |> tbl2list |> List.map vreg2str |> String.concat " "
-  in
-  *)

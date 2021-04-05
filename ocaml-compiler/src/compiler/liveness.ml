@@ -97,8 +97,8 @@ let calc_liveness use def cfg =
   step ();
   (in_set, out_set)
 
-let analyze (_, labeling, instr_vec) =
-  let cfg = make_cfg labeling instr_vec in
+let analyze vec ptbl =
+  let cfg = make_cfg instr_vec ptbl in
   let use, def = calc_use_def instr_vec in
   let in_set, out_set = calc_liveness use def cfg in
   { in_set; out_set; instr_vec; use; def; cfg; }

@@ -76,3 +76,15 @@ let to_list vec =
       aux v (hd :: l) (idx + 1)
   in
   aux vec [] 0
+
+let copy v =
+  let ret = empty () in
+  for i in 0 to (length v) - 1 do
+    push_back ret (get v i)
+  done;
+  ret
+
+let iter v f =
+  for i in 0 to (Vector.length v) - 1 do
+    f (Vector.get v i)
+  done
