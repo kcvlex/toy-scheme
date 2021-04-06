@@ -4,17 +4,20 @@ type 'a t = {
   directed : bool;
   mutable len : int;
   belong : ('a, 'a) Hashtbl.t;
-  group : ('a, node_set) Hashtbl.t;
+  group : ('a, 'a node_set) Hashtbl.t;
   edges : 'a edges_type;
   redges : 'a edges_type;
 }
 
 let list_of_tblkey tbl = Hashtbl.fold (fun x _ y -> x :: y) tbl []
 
+let list_of_tblval tbl = Hashtbl.fold (fun _ x y -> x :: y) tbl []
+
 let make d = 
   {
     directed = d;
     len = 0;
+    group = Hashtbl.create 2;
     belong = Hashtbl.create 2;
     edges = Hashtbl.create 2;
     redges = Hashtbl.create 2;
@@ -44,7 +47,7 @@ let add_edge_aux g src dst =
 let rm_edge_aux g src dst =
   let src = represent g src in
   let dst = represent g dst in
-  if (Hashtbl.mem g.nodes src) and (Hashtbl.mem g nodes dst) then begin
+  if (Hashtbl.mem g.belong src) && (Hashtbl.mem g.belong dst) then begin
     Hashtbl.remove (Hashtbl.find g.edges src) dst;
     Hashtbl.remove (Hashtbl.find g.redges dst) src
   end else begin
@@ -70,7 +73,7 @@ let rm_edge g src dst =
   end
 
 let rm_node g a =
-  let a = represent g.belong a in
+  let a = represent g a in
   let lis = list_of_tblkey (Hashtbl.find g.edges a) in
   let grp = list_of_tblkey (Hashtbl.find g.group a) in
   g.len <- g.len - 1;
@@ -81,14 +84,14 @@ let rm_node g a =
   List.iter (Hashtbl.remove g.belong) grp
 
 let succ g a =
-  let a = represent g.belong a in
-  list_of_edge (Hashtbl.find g.edges a)
+  let a = represent g a in
+  list_of_tblkey (Hashtbl.find g.edges a)
 
 let pred g a = 
-  let a = represent g.belong a in
-  list_of_edge (Hashtbl.find g.redges a)
+  let a = represent g a in
+  list_of_tblkey (Hashtbl.find g.redges a)
 
-let length g = Hashtbl.length g.nodes
+let length g = g.len
 
 let nodes g = list_of_tblkey g.group
 
@@ -99,15 +102,32 @@ let degree g a =
 let has_edge g src dst =
   let src = represent g src in
   let dst = represent g dst in
-  Hashtbl.mem g.edges (src, dst)
+  Hashtbl.mem g.edges src && 
+  Hashtbl.mem (Hashtbl.find g.edges src) dst
+
+let remap_aux g tbl =
+  let ret = Hashtbl.create (Hashtbl.length tbl) in
+  Hashtbl.iter (fun x _ -> Hashtbl.add ret (represent g x) ()) tbl;
+  ret
+
+let remap g =
+  let replace tbl k =
+    (Hashtbl.find tbl k)
+    |> remap_aux g
+    |> Hashtbl.replace tbl k
+  in
+  let ns = nodes g in
+  List.iter (fun x -> replace g.edges x; replace g.redges x) ns
 
 let contract_aux g a b =
   let neig = list_of_tblkey (Hashtbl.find g.edges b) in
   let grp = list_of_tblkey (Hashtbl.find g.group b) in
   rm_node g b;
+  g.len <- g.len - 1;
   List.iter (fun x -> Hashtbl.replace g.belong x a) grp;
-  List.iter (fun x -> Hashtbl.replace (Hashtbl.find group a) x ()) grp;
-  List.iter (add_edge g a) neig
+  List.iter (fun x -> Hashtbl.replace (Hashtbl.find g.group a) x ()) grp;
+  List.iter (add_edge g a) neig;
+  remap g
 
 let contraction g a b =
   let a = represent g a in
@@ -123,14 +143,37 @@ let contraction g a b =
     contract_aux g a b
   end
 
+let is_same_group g a b =
+  let a = represent g a in
+  let b = represent g b in
+  a = b
+
+let group g a =
+  let a = represent g a in
+  let tbl = Hashtbl.find g.group a in
+  Hashtbl.fold (fun x _ l -> x :: l) tbl []
+
 let dump g f =
-  let len = length g in
-  let ns = nodes g in
-  let fs n =
-    n |> succ g
-      |> List.map f
-      |> String.concat " "
+  let fn seq = 
+    seq |> List.map f 
+        |> String.concat " " 
+        |> Printf.sprintf "[ %s ]"
   in
-  ns |> List.map (fun x y -> (f x, fs x))
-     |> List.map (fun x y -> Printf.sprintf "%s : [ %s ]" x y)
-     |> String.concat "\n"
+  let fs n = n |> succ g |> fn in
+  let grp =
+    g.group 
+    |> list_of_tblval
+    |> List.map list_of_tblkey
+    |> List.map fn
+    |> List.map (Printf.sprintf "  %s")
+    |> String.concat "\n"
+    |> Printf.sprintf "Groups :\n%s"
+  in
+  let edges =
+    (nodes g)
+    |> List.map (fun x -> (f x, fs x))
+    |> List.map (fun (x, y) -> Printf.sprintf "  %s : %s" x y)
+    |> String.concat "\n"
+    |> Printf.sprintf "Edges\n%s"
+  in
+  grp ^ "\n" ^ edges

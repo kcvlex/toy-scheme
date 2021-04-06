@@ -25,7 +25,6 @@ let restrict_2arg lis = match lis with
   | _ -> raise (Invalid_argument "must be 2 element")
 
 let get_instr_id instr = match instr with
-  | Bind (_, _, id) -> id
   | Move (_, _, id) -> id
   | Test (_, _, id) -> id
   | Jump (_, id) -> id
@@ -35,11 +34,6 @@ let get_instr_id instr = match instr with
   | PrimCall (_, _, _, id) -> id
 
 let new_instr vec instr = Vector.push_back vec instr 
-
-let push_bind vec reg v = 
-  let id = SlotNumber.fresh instr_id_slot in
-  let instr = Bind (reg, v, id) in
-  new_instr vec instr
 
 let push_move vec reg v =
   let id = SlotNumber.fresh instr_id_slot in
@@ -91,7 +85,7 @@ let rec from_abs_proc ptbl var2vreg vec proc =
       | AbstractMachineType.Bind (s, v) ->
           let v = recv v in
           let reg = get_vreg var2vreg s in
-          push_bind vec reg v;
+          push_move vec reg v;
           recf p_tl
       | AbstractMachineType.Move (s, v) ->
           let v = recv v in
@@ -113,7 +107,6 @@ let rec from_abs_proc ptbl var2vreg vec proc =
             push_move vec RV (Reg s); push_return vec; recf p_tl
           in
           (match Vector.rget vec 0 with
-            | Bind (s, _, _) -> f s
             | Move (s, _, _) -> f s
             | Jump _ -> push_return vec; recf p_tl;     (* FIXME : tail call, maybe *)
             | Load (s, _, _, _) -> f s
@@ -230,6 +223,15 @@ let vec_of_list lis =
     | [] -> ()
   in
   aux lis; ret
+
+let replace_id instr id = match instr with
+  | Move (s, v, _) -> Move (s, v, id)
+  | Test (a, b, _) -> Test (a, b, id)
+  | Jump (t, _) -> Jump (t, id)
+  | Return _ -> Return id
+  | Load (a, b, c, _) -> Load (a, b, c, id)
+  | Store (a, b, c, _) -> Store (a, b, c, id)
+  | PrimCall (a, b, c, _) -> PrimCall (a, b, c, id)
 
 let sample_program =
   let a = Virtual 0 in

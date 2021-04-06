@@ -79,12 +79,12 @@ let to_list vec =
 
 let copy v =
   let ret = empty () in
-  for i in 0 to (length v) - 1 do
+  for i = 0 to (length v) - 1 do
     push_back ret (get v i)
   done;
   ret
 
-let iter v f =
-  for i in 0 to (Vector.length v) - 1 do
-    f (Vector.get v i)
+let iter f v =
+  for i = 0 to (length v) - 1 do
+    f (get v i)
   done

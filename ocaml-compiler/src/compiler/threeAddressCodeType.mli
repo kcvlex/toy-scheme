@@ -2,7 +2,6 @@ open Util
 
 type t = (string, arguments_type) Hashtbl.t * (string, int) Hashtbl.t * instr_type Vector.t
 and instr_type =
-  | Bind of reg_type * value_type * int
   | Move of reg_type * value_type * int
   | Test of value_type * value_type * int
   | Jump of value_type * int  (* FIXME : rename to call *)
@@ -21,9 +20,9 @@ and value_type =
   | Quote of AstType.t
 and reg_type =
   | RV
-  | Argument of int
-  | CalleeSave of int
   | CallerSave of int
+  | CalleeSave of int
+  | Argument of int
   | Virtual of int
 and arguments_type = clsr_arg_type * common_arg_type * extend_arg_type
 and clsr_arg_type = string option

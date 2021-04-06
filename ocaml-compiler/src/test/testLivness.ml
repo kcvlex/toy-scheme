@@ -1,4 +1,5 @@
 open Util
+open TestUtil
 open Compiler
 
 let vreg2str vr = match vr with
@@ -22,8 +23,8 @@ let make_vec lis =
   make lis; v
 
 let () =
-  let sample = ThreeAddressCode.sample_program in
-  let liveness = Liveness.analyze sample "entry" in
+  let (_, ptbl, vec) = ThreeAddressCode.sample_program in
+  let liveness = Liveness.analyze vec ptbl in
   let correct = [
     ([ 2 ],    [ 0; 2 ]);
     ([ 0; 2 ], [ 1; 2 ]); 
@@ -49,4 +50,5 @@ let () =
       failwith (Printf.sprintf "live-out %d" i)
     else
       ()
-  done
+  done;
+  print_label "test passed : Liveness analysis"

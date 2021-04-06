@@ -7,15 +7,12 @@ type t = {
   instr_vec : instr_type Vector.t;
   def : reg_set Vector.t;
   use : reg_set Vector.t;
-  cfg : (int, unit) Graph.t;
+  cfg : int Graph.t;
 }
 
 let make_cfg labeling vec =
   let len = Vector.length vec in
   let cfg = Graph.make true in
-  for i = 0 to len - 1 do
-    Graph.add_node cfg i ()
-  done;
   for i = 0 to len - 1 do
     let add_seq () =
       if i + 1 < len then Graph.add_edge cfg i (i + 1) else ()
@@ -47,7 +44,6 @@ let calc_use_def vec =
     in
     let instr = Vector.get vec i in
     match instr with
-      | Bind (r, v, _) -> update_def r; update_use v
       | Move (r, v, _) -> update_def r; update_use v
       | Test (v, u, _) -> update_use v; update_use u
       | Jump (v, _) -> update_use v
@@ -97,8 +93,8 @@ let calc_liveness use def cfg =
   step ();
   (in_set, out_set)
 
-let analyze vec ptbl =
-  let cfg = make_cfg instr_vec ptbl in
+let analyze instr_vec ptbl =
+  let cfg = make_cfg ptbl instr_vec in
   let use, def = calc_use_def instr_vec in
   let in_set, out_set = calc_liveness use def cfg in
   { in_set; out_set; instr_vec; use; def; cfg; }
