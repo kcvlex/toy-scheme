@@ -233,6 +233,53 @@ let replace_id instr id = match instr with
   | Store (a, b, c, _) -> Store (a, b, c, id)
   | PrimCall (a, b, c, _) -> PrimCall (a, b, c, id)
 
+
+let string_of_reg r = match r with
+  | RV -> "RV"
+  | CallerSave i -> Printf.sprintf "CER%d" i
+  | CalleeSave i -> Printf.sprintf "CEE%d" i
+  | Argument i -> Printf.sprintf "ARG%d" i
+  | Virtual i -> Printf.sprintf "VTR%d" i
+
+let string_of_value value = match value with
+  | Int i -> string_of_int i
+  | Bool true -> "true"
+  | Bool false -> "false"
+  | Reg r -> string_of_reg r
+  | Nil -> "null"
+  | FuncLabel s -> s ^ " (function)"
+  | JumpLabel s -> s ^ " (jump)"
+  | Primitive p -> string_of_sym (PrimitiveSym p)
+  | Quote a -> "`" ^ (Ast.code_of_ast a)
+
+let string_of_instr instr = match instr with
+  | Move (a, b, _) ->
+      let a = string_of_reg a in
+      let b = string_of_value b in
+      Printf.sprintf "%s <- %s" a b
+  | Test (a, b, _) ->
+      let a = string_of_value a in
+      let b = string_of_value b in
+      Printf.sprintf "if %s then %s" a b
+  | Jump (a, _) -> Printf.sprintf "jump %s" (string_of_value a)
+  | Return _ -> "return"
+  | Load (a, b, c, _) ->
+      let a = string_of_reg a in
+      let b = string_of_value b in
+      Printf.sprintf "%s <- %d(%s)" a c b
+  | Store (a, b, c, _) ->
+      let a = string_of_reg a in
+      let b = string_of_value b in
+      Printf.sprintf "%d(%s) <- %s" c b a
+  | PrimCall (a, p, l, _) ->
+      let a = string_of_reg a in
+      let p = string_of_sym (PrimitiveSym p) in
+      let l = 
+        l |> List.map string_of_value
+          |> String.concat " "
+      in
+      Printf.sprintf "%s <- (%s %s)" a p l
+
 let sample_program =
   let a = Virtual 0 in
   let b = Virtual 1 in

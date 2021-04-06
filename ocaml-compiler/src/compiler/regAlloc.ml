@@ -111,13 +111,13 @@ let split_program (sigtbl, ptbl, vec) =
   in
   reset order flis 
 
-let insert_caller_save rnum vec ptbl =
+let insert_callee_save rnum vec ptbl =
   let new_vec = Vector.empty () in
   let new_ptbl = Hashtbl.create (Hashtbl.length ptbl) in
   let sv = Vector.empty () in
   for i = 0 to rnum - 1 do
     let reg = SlotNumber.fresh vreg_slot in
-    let instr = Move (reg, Reg (CallerSave i), i) in
+    let instr = Move (reg, Reg (CalleeSave i), i) in
     Vector.push_back sv reg;
     Vector.push_back new_vec instr
   done;
@@ -130,7 +130,7 @@ let insert_caller_save rnum vec ptbl =
   let len = Vector.length new_vec in
   for i = 0 to rnum - 1 do
     let reg = Vector.get sv i in
-    let instr = Move (CallerSave i, Reg reg, i + len) in
+    let instr = Move (CalleeSave i, Reg reg, i + len) in
     Vector.push_back new_vec instr
   done;
   Hashtbl.iter (fun x y -> Hashtbl.add new_ptbl x (y + rnum)) ptbl;
@@ -618,7 +618,7 @@ let allocate_func vec ptbl art =
 let allocate_experiment reg_num vec ptbl =
   let art = make_act_regs reg_num in
   let caller_sn = List.length art.caller_save_regs in
-  let vec, ptbl = insert_caller_save caller_sn vec ptbl in
+  let vec, ptbl = insert_callee_save caller_sn vec ptbl in
   let ptbl =
     let lis = Hashtbl.fold (fun x y l -> (x, y) :: l) ptbl [] in
     Hashtbl.clear ptbl;
@@ -636,7 +636,7 @@ let allocate program reg_num =
     let caller_save_num = List.length art.caller_save_regs in
     program 
     |> split_program
-    |> List.map (fun (x, y, z) -> (x, (insert_caller_save caller_save_num y, z, art)))
+    |> List.map (fun (x, y, z) -> (x, (insert_callee_save caller_save_num y, z, art)))
     |> List.split
   in
   let procs = List.map (fun (x, y, z) -> allocate_func x y z) procs in
