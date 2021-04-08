@@ -38,6 +38,8 @@ let node_preprocess g a =
 
 let represent g a = Hashtbl.find g.belong a
 
+let add_node g a = node_preprocess g a
+
 let add_edge_aux g src dst =
   let src = represent g src in
   let dst = represent g dst in

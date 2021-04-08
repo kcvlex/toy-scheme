@@ -10,4 +10,10 @@ val replace_id : instr_type -> int -> instr_type
 
 val string_of_instr : instr_type -> string
 
+val string_of_reg : reg_type -> string
+
+val string_of_regtbl : reg_table -> string
+
+val make_reg_set : (int * int * int) -> reg_set
+
 val sample_program : t

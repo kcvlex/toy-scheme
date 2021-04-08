@@ -2,24 +2,15 @@ open Util
 open ThreeAddressCode
 open ThreeAddressCodeType
 
-type actual_reg_set = {
-  reg_num : int * int * int;
-  rsum : int;
-  caller_save_regs : reg_type list;
-  callee_save_regs : reg_type list;
-  argument_regs : reg_type list;
-  all_regs : reg_type list;
-}
-
 type t = {
-  regs : actual_reg_set;
+  regs : reg_set;
   intrf_g : reg_type Graph.t;
-  proc : instr_type Vector.t;
+  proc : (instr_type * string option) Vector.t;
   move_pair : (reg_type * reg_type, unit) Hashtbl.t;
   move_related : (reg_type, int) Hashtbl.t;
-  freezed : reg_set;
-  spilled : reg_set;
-  stack : reg_type Stack.t;
+  freezed : reg_table;
+  spilled : reg_table;
+  stack : (reg_type * reg_type list * reg_type list) Stack.t;
 }
 
 type color_mapping = {
@@ -32,109 +23,87 @@ let vreg_slot = SlotNumber.make (fun x -> Virtual (x + offset))
 let dummy_reg = Virtual (-1)
 let mem_reg = Virtual (-2)
   
-let list_of_ptbl ptbl =
-  ptbl |> fun p -> Hashtbl.fold (fun x y l -> (x, y) :: l) p []
+let list_of_label_tbl label_tbl =
+  label_tbl |> fun p -> Hashtbl.fold (fun x y l -> (x, y) :: l) p []
        |> List.sort (fun x y -> (snd x) - (snd y))
   
-let make_act_regs reg_num =
-  let caller_save, callee_save, args = reg_num in
-  let rsum =
-    let sum3 (a, b, c) = a + b + c in
-    sum3 reg_num
-  in
-  let rec make i len cnstr =
-    if i = len then [] else (cnstr i) :: (make (i + 1) len cnstr)
-  in
-  let caller_save_regs = make 0 caller_save (fun x -> CallerSave x) in
-  let callee_save_regs = make 0 callee_save (fun x -> CalleeSave x) in
-  let argument_regs = make 0 args (fun x -> Argument x) in
-  let all_regs = List.flatten [ caller_save_regs; callee_save_regs; argument_regs ] in
-  { 
-    reg_num; 
-    rsum; 
-    caller_save_regs; 
-    callee_save_regs; 
-    argument_regs;
-    all_regs
-  }
 
-let reset_id vec ptbl =
+let reset_id seq =
+  let new_seq = Vector.empty () in
+  let new_label_tbl = Hashtbl.create 0 in
+  let reset_label_tbl label i = match label with
+    | Some l -> Hashtbl.add new_label_tbl l i
+    | None -> ()
+  in
+  let rec aux i =
+    if i = Vector.length seq then
+      (new_seq, new_label_tbl)
+    else begin
+      let instr, label = Vector.get seq i in
+      let instr = replace_id instr (Vector.length new_seq) in
+      Vector.push_back new_seq (instr, label);
+      reset_label_tbl label i;
+      aux (i + 1)
+    end
+  in
+  aux 0
+
+let insert_callee_save rnum vec =
   let new_vec = Vector.empty () in
-  let new_ptbl = Hashtbl.create 0 in
-  let rtbl = 
-    let res = Hashtbl.create (Hashtbl.length ptbl) in
-    Hashtbl.iter (fun x y -> Hashtbl.replace res y x) ptbl;
-    res
-  in
-  let rewrite_tbl instr i =
-    let id = get_instr_id instr in
-    if Hashtbl.mem rtbl id then begin
-      let s = Hashtbl.find rtbl id in
-      Hashtbl.add new_ptbl s i
-    end else
-      ()
-  in
-  for i = 0 to (Vector.length vec) - 1 do
-    let instr = Vector.get vec i in
-    rewrite_tbl instr i;
-    Vector.push_back new_vec (replace_id instr i)
+  let sv = Vector.empty () in
+  let name = snd (Vector.get vec 0) in
+  Vector.set vec 0 (fst (Vector.get vec 0), None);
+  for i = 0 to rnum - 1 do
+    let reg = SlotNumber.fresh vreg_slot in
+    let instr = Move (reg, Reg (CalleeSaved i), -1) in
+    Vector.push_back sv reg;
+    Vector.push_back new_vec (instr, (if i = 0 then name else None))
   done;
-  (new_vec, new_ptbl)
+  let pushback e = match e with
+    | (Return _, _)->
+        for i = 0 to rnum - 1 do
+          let reg = Vector.get sv i in
+          let instr = Move (CalleeSaved i, Reg reg, -1) in
+          Vector.push_back new_vec (instr, None)
+        done;
+        Vector.push_back new_vec e
+    | _ -> Vector.push_back new_vec e
+  in
+  Vector.iter pushback vec;
+  reset_id new_vec
 
-let split_program (sigtbl, ptbl, vec) =
+let split_program program =
+  let { signature; label_tbl; seq } = program in
   let funcs =
-    sigtbl
+    signature
     |> fun s -> Hashtbl.fold (fun x _ l -> x :: l) s []
-    |> List.map (fun x -> (x, Hashtbl.find ptbl x))
+    |> List.map (fun x -> (x, Hashtbl.find label_tbl x))
     |> List.sort (fun x y -> (snd x) - (snd y))
   in
   let order, idxlis = List.split funcs in
-  let rec split idx idxlis new_vec =
-    if idx = Vector.length vec then
-      [ new_vec ]
+  let rec aux i idxlis vec =
+    if i = Vector.length seq then
+      [ vec ]
     else begin
+      let instr = Vector.get seq i in
       match idxlis with
-        | x :: xs when x = idx ->
-            new_vec :: (split idx xs (Vector.empty ()))
+        | x :: xs when x = i ->
+            let hd = Vector.copy vec in
+            let vec = Vector.empty () in
+            let idxlis = xs in
+            Vector.push_back vec instr;
+            hd :: (aux (i + 1) idxlis vec)
         | _ ->
-            Vector.push_back new_vec (Vector.get vec idx);
-            split (idx + 1) idxlis new_vec
+            Vector.push_back vec instr;
+            aux (i + 1) idxlis vec
     end
   in
-  let flis = split 0 idxlis (Vector.empty ()) in
-  let rec reset names bodies = match (names, bodies) with
-    | (x :: xs, y :: ys) ->
-        let y, z = reset_id x ptbl in
-        (x, y, z) :: (reset xs ys)
-    | ([], []) -> []
-    | _ -> raise (Invalid_argument ("reset id"))
+  let seq_per_func = 
+    let s = aux 0 idxlis (Vector.empty ()) in
+    s |> List.tl
+      |> List.map reset_id
   in
-  reset order flis 
-
-let insert_callee_save rnum vec ptbl =
-  let new_vec = Vector.empty () in
-  let new_ptbl = Hashtbl.create (Hashtbl.length ptbl) in
-  let sv = Vector.empty () in
-  for i = 0 to rnum - 1 do
-    let reg = SlotNumber.fresh vreg_slot in
-    let instr = Move (reg, Reg (CalleeSave i), i) in
-    Vector.push_back sv reg;
-    Vector.push_back new_vec instr
-  done;
-  let aux instr =
-    let id = get_instr_id instr in
-    let id = id + rnum in
-    replace_id instr id
-  in
-  Vector.iter (fun x -> Vector.push_back new_vec (aux x)) vec;
-  let len = Vector.length new_vec in
-  for i = 0 to rnum - 1 do
-    let reg = Vector.get sv i in
-    let instr = Move (CalleeSave i, Reg reg, i + len) in
-    Vector.push_back new_vec instr
-  done;
-  Hashtbl.iter (fun x y -> Hashtbl.add new_ptbl x (y + rnum)) ptbl;
-  (new_vec, new_ptbl)
+  (order, seq_per_func)
 
 let precolor ras g =
   let rec add x lis = match lis with
@@ -156,10 +125,21 @@ let is_precolored alloc n =
   in
   aux alloc.regs.all_regs
 
+let print_instr vec label_tbl =
+  print_endline ""; print_endline ""; print_endline "";
+  Hashtbl.iter (fun x y -> Printf.printf "%s ---> %d\n" x y) label_tbl;
+  for i = 0 to (Vector.length vec) - 1 do
+    let instr, _ = Vector.get vec i in
+    Printf.printf "%d : %s\n" i (string_of_instr instr) 
+  done
+
 (* Build interference graph *)
-let build art vec ptbl spilled =
+let build regs vec label_tbl spilled =
   let g = Graph.make false in
-  let liveness = Liveness.analyze vec ptbl in
+  Graph.add_node g dummy_reg;
+  print_instr vec label_tbl;
+  let liveness = Liveness.analyze regs vec label_tbl in
+  print_endline ""; print_endline (Liveness.dump liveness);
   let mp = Hashtbl.create 8 in
   let add_edges r i =
     let live_out = Liveness.live_out liveness i in
@@ -177,8 +157,10 @@ let build art vec ptbl spilled =
         Hashtbl.iter (fun x _-> if x != rhs then Graph.add_edge g lhs x else ()) live_out;
     | _ -> ()
   in
-  precolor art g;
+  Vector.iter (fun (x, _) -> f x) vec;
+  precolor regs g;
   Graph.rm_node g dummy_reg;
+  print_endline ""; print_endline (Graph.dump g string_of_reg);
   let mp =
     let new_mp = Hashtbl.create 8 in
     let add (x, y) _ = if Graph.has_edge g x y then () else Hashtbl.add new_mp (x, y) () in
@@ -193,7 +175,7 @@ let build art vec ptbl spilled =
     Hashtbl.iter (fun (x, y) _ -> begin add x; add y end) mp; tbl
   in
   {
-    regs = art;
+    regs = regs;
     proc = vec;
     intrf_g = g;
     move_pair = mp;
@@ -208,7 +190,7 @@ let check_coalesce alloc n1 n2 =
   if Graph.has_edge alloc.intrf_g n1 n2 then
     false
   else begin
-    let upper = alloc.regs.rsum in
+    let upper = alloc.regs.reg_sum in
     let tbl = Hashtbl.create upper in
     let add s = List.iter (fun x -> Hashtbl.replace tbl x ()) s in
     add (Graph.succ alloc.intrf_g n1);
@@ -228,16 +210,29 @@ let rm_move_pair alloc dst src =
   in
   dec dst; dec src
 
+let rm_self_loop alloc =
+  let nodes = Graph.nodes alloc.intrf_g in
+  List.iter (fun x -> Graph.rm_edge alloc.intrf_g x x) nodes
+
 let exec_coalesce alloc dst src =
   Graph.contraction alloc.intrf_g dst src;
+  Printf.printf "Coalesce : %s %s" (string_of_reg dst) (string_of_reg src);
+  rm_self_loop alloc;
   rm_move_pair alloc dst src
 
 let sort_by_deg alloc set =
   set |> fun s -> Hashtbl.fold (fun x _ l -> (x, Graph.degree alloc.intrf_g x) :: l) s []
       |> List.sort (fun x y -> (snd x) - (snd y))
 
+let rm_node alloc n =
+  let g = alloc.intrf_g in
+  let adj = Graph.succ g n in
+  let grp = Graph.group g n in
+  Graph.rm_node g n;
+  Stack.push (n, adj, grp) alloc.stack
+
 let simplify alloc =
-  let rsum = alloc.regs.rsum in
+  let reg_sum = alloc.regs.reg_sum in
   let nodes = Graph.nodes alloc.intrf_g in
   let deg = 
     nodes
@@ -246,14 +241,16 @@ let simplify alloc =
     |> List.map (fun x -> (x, Graph.degree alloc.intrf_g x))
     |> List.sort (fun x y -> (snd x) - (snd y))
   in
-  let rec rm_node lis update = match lis with
-    | (n, d) :: xs when d < rsum ->
-        Graph.rm_node alloc.intrf_g n;
-        Stack.push n alloc.stack;
-        rm_node xs true
+  let rec aux lis update = match lis with
+    | (n, d) :: xs when d < reg_sum ->
+        Printf.printf "Remove %s\n" (string_of_reg n);
+        rm_node alloc n;
+        aux xs true
     | _ -> update
   in
-  rm_node deg false
+  let res = aux deg false in
+  rm_self_loop alloc;
+  res
 
 (* FIXME *)
 let pickup_freeze alloc =
@@ -315,12 +312,13 @@ let freeze alloc =
 let spill alloc =
   let r = pickup_spill alloc in
   Hashtbl.add alloc.spilled r ();
+  rm_node alloc r;
   filter_move_pair (fun x -> r != x) alloc
 
 let remove_nodes alloc =
   let step () =
     let update = simplify alloc in
-    let update = update && (coalesce alloc) in
+    let update = update || (coalesce alloc) in
     if update then
       ()
     else begin
@@ -331,7 +329,7 @@ let remove_nodes alloc =
         spill alloc
     end
   in
-  while alloc.regs.rsum < Graph.length (alloc.intrf_g) do
+  while alloc.regs.reg_sum < Graph.length (alloc.intrf_g) do
     step ()
   done
 
@@ -359,7 +357,7 @@ let iota n =
   aux 0
 
 let init_cmapping alloc =
-  let k = alloc.regs.rsum in
+  let k = alloc.regs.reg_sum in
   let ns = 
     alloc.regs.all_regs
     |> List.map (Graph.represent alloc.intrf_g)
@@ -370,12 +368,14 @@ let init_cmapping alloc =
   { k; coloring }
 
 let assign_color mapping alloc n =
+  Printf.printf "Assign Start %s\n" (string_of_reg n);
   let adj =
     let succ = 
       n |> Graph.succ alloc.intrf_g
         |> List.filter (Hashtbl.mem mapping.coloring)
         |> List.map (Hashtbl.find mapping.coloring)
     in
+    Printf.printf "Adj : [ %s ]\n" (String.concat " " (List.map string_of_int succ));
     let res = Hashtbl.create (List.length succ) in
     List.iter (fun c -> Hashtbl.replace res c ()) succ;
     res
@@ -393,154 +393,147 @@ let assign_color mapping alloc n =
         Hashtbl.add mapping.coloring n c; true
     | None -> false
 
+let restore_node alloc =
+  let n, adj, grp = Stack.pop alloc.stack in
+  let g = alloc.intrf_g in
+  List.iter (Graph.add_node g) grp;
+  List.iter (Graph.contraction g n) grp;
+  List.iter (Graph.add_edge g n) adj;
+  n
+
 let coloring alloc =
   let cm = init_cmapping alloc in
   let spilled = Hashtbl.create 0 in
   while not (Stack.is_empty alloc.stack) do
-    let n = Stack.pop alloc.stack in
+    let n = restore_node alloc in
     let res = assign_color cm alloc n in
     if res then () else Hashtbl.add spilled n ()
   done;
   (cm, spilled)
 
-type replace_reg_type = {
-  def : reg_type list;
-  use : reg_type list;
-  replace : (reg_type * reg_type) list;
-}
-
-let make_rrt def use =
-  let lis = List.append def use in
-  let rec aux lis = match lis with
-    | x :: xs -> (x, SlotNumber.fresh vreg_slot) :: (aux xs)
-    | [] -> []
-  in
-  { def; use; replace = aux lis }
-
-let convert_reg rrt r =
-  let rec aux lis = match lis with
-    | (x, y) :: xs -> if x = r then y else aux xs
-    | [] -> r
-  in
-  aux rrt.replace
-
-let rewrite_proc vec ptbl spill =
+let rewrite_proc seq spill =
   let new_vec = Vector.empty () in
-  let ptbl_lis = list_of_ptbl ptbl in
-  let new_ptbl = Hashtbl.create (Hashtbl.length ptbl) in
-  let rewrite_ptbl idx sum = match ptbl_lis with
-    | (x, y) :: xs when y = idx ->
-        Hashtbl.add new_ptbl x (y + sum);
-        xs
-    | _ -> ptbl_lis
-  in
   let was_spilled x = Hashtbl.mem spill x in
-  let extract_regs lis =
-    let rec aux lis = match lis with
-      | (Reg x) :: xs -> x :: (aux xs)
-      | _ :: xs -> aux xs
-      | [] -> []
-    in
-    aux lis
+  let replace_reg v label = match v with
+    | Reg r when was_spilled r ->
+        let vr = SlotNumber.fresh vreg_slot in
+        Vector.push_back new_vec (Load (vr, Reg mem_reg, 0, -1), label);
+        (Reg vr, None)
+    | _ -> (v, label)
   in
-  let make instr = 
-    let def, use = match instr with
-      | Move (r, s, _) -> ([ r ], extract_regs [ s ])
-      | Test (r1, r2, _) -> ([], extract_regs [ r1; r2 ])
-      | Jump (r, _) -> ([], extract_regs [ r ])
-      | Load (r, s, _, _) -> ([ r ], extract_regs [ s ])
-      | Store (r, s, _, _) -> ([], r :: (extract_regs [ s ]))
-      | PrimCall (r, _, l, _) -> ([ r ], extract_regs l)
-      | _ -> ([], [])
-    in
-    make_rrt def use
+  let rewrite_instr instr label = match instr with
+    | Move (r, s, i) ->
+        let s, label = replace_reg s label in
+        if was_spilled r then
+          Vector.push_back new_vec (Store (mem_reg, s, 0, i), label)
+        else
+          Vector.push_back new_vec (Move (r, s, i), label)
+    | Test (a, b, i) ->
+        let a, label = replace_reg a label in
+        let b, label = replace_reg b label in
+        Vector.push_back new_vec (Test (a, b, i), label)
+    | Jump (a, i) ->
+        let a, label = replace_reg a label in
+        Vector.push_back new_vec (Jump (a, i), label)
+    | Return i -> Vector.push_back new_vec (Return i, label)
+    | Load (dst, base, i, j) ->
+      let base, label = replace_reg base label in
+      if was_spilled dst then begin
+        let dst = SlotNumber.fresh vreg_slot in
+        Vector.push_back new_vec (Load (dst, base, i, j), label);
+        Vector.push_back new_vec (Store (dst, Reg mem_reg, 0, -1), None)
+      end else begin
+        Vector.push_back new_vec (Load (dst, base, i, j), label)
+      end
+    | Store (src, base, i, j) ->
+        let base, label = replace_reg base label in
+        if was_spilled src then begin
+          let src = SlotNumber.fresh vreg_slot in
+          Vector.push_back new_vec (Load (src, Reg mem_reg, 0, -1), label);
+          Vector.push_back new_vec (Store (src, base, i, j), None)
+        end else begin
+          Vector.push_back new_vec (Store (src, base, i, j), label);
+        end
+    | PrimCall (r, p, vl, i) ->
+        let rec aux lis label = match lis with
+          | x :: xs ->
+              let x, label = replace_reg x label in
+              let xs, label = aux xs label in
+              (x :: xs, label)
+          | [] -> ([], label)
+        in
+        let vl, label = aux vl label in
+        if was_spilled r then begin
+          let r = SlotNumber.fresh vreg_slot in
+          Vector.push_back new_vec (PrimCall (r, p, vl, i), label);
+          Vector.push_back new_vec (Store (r, Reg mem_reg, 0, -1), None);
+        end else begin
+          Vector.push_back new_vec (PrimCall (r, p, vl, i), label)
+        end
   in
-  let push_lw idx sum rrt =
-    let rec aux i l = match l with
-      | x :: xs -> 
-          let load = Load (x, Reg mem_reg, 0, i + idx + sum) in
-          Vector.push_back new_vec load;
-          aux (i + 1) xs
-      | [] -> sum + i
-    in
-    aux 0 rrt.use
-  in
-  let push_sw idx sum rrt =
-    let rec aux i l = match l with
-      | x :: xs -> 
-          let store = Store (mem_reg, Reg x, 0, i + idx + sum) in
-          Vector.push_back new_vec store;
-          aux (i + 1) xs
-      | [] -> sum + i
-    in
-    aux 0 rrt.def
-  in
-  let rewrite_instr instr idx sum =
-    let rrt = make instr in
-    let sum = push_lw idx sum rrt in
-    let cr1 r = convert_reg rrt r in
-    let cr2 v = match v with
-      | Reg x -> Reg (cr1 x)
-      | _ -> v
-    in
-    let id = idx + sum in
-    let instr = match instr with
-      | Move (r, s, _) -> Move (cr1 r, cr2 s, id)
-      | Test (v1, v2, _) -> Test (cr2 v1, cr2 v2, id)
-      | Jump (v, _) -> Jump (cr2 v, id)
-      | Return _ -> Return id
-      | Load (r, v, i, _) -> Load (cr1 r, cr2 v, i, id)
-      | Store (r, v, i, _) -> Store (cr1 r, cr2 v, i, id)
-      | PrimCall (r, p, vl, _) -> PrimCall (cr1 r, p, List.map cr2 vl, id)
-    in
-    Vector.push_back new_vec instr;
-    push_sw (idx + 1) sum rrt
-  in
-  let rec loop idx sum plis =
-    let plis = rewrite_ptbl idx sum in
-    if idx = Vector.length vec then
+  let rec rewrite i =
+    if i = Vector.length seq then
       ()
     else begin
-      let instr = Vector.get vec idx in
-      let sum = rewrite_instr instr idx sum in
-      let idx = idx + 1 in
-      loop idx sum plis
+      let instr, label = Vector.get seq i in
+      rewrite_instr instr label;
+      rewrite (i + 1)
     end
   in
-  loop 0 0 ptbl_lis;
-  (new_vec, new_ptbl)
+  rewrite 0;
+  reset_id new_vec
 
-let allocate_func_aux vec ptbl art =
+let dump_colormap cm =
+  Hashtbl.fold (fun x y l -> (x, y) :: l) cm.coloring []
+  |> List.map (fun (x, y) -> Printf.sprintf "[ %s ] ---> %d" (string_of_reg x) y)
+  |> String.concat "\n"
+
+let dump_spilled sp =
+  Hashtbl.fold (fun x _ l -> x :: l) sp []
+  |> List.map string_of_reg
+  |> String.concat " "
+  |> Printf.sprintf "[ %s ]"
+
+let allocate_func_aux vec label_tbl regs =
   let cm = ref None in
   let alloc = ref None in
   let vec = ref vec in
-  let ptbl = ref ptbl in
+  let label_tbl = ref label_tbl in
   let spilled = ref (Hashtbl.create 0) in
   let init = ref true in
+  let body () =
+    if (not !init) && Hashtbl.length !spilled = 0 then
+      ()
+    else begin
+    let new_alloc = build regs !vec !label_tbl !spilled in
+    init := false;
+    remove_nodes new_alloc;
+    let new_cm, new_spilled = coloring new_alloc in
+    print_endline ""; print_endline (dump_colormap new_cm);
+    print_endline ""; print_endline (dump_spilled new_spilled);
+    let new_vec, new_label_tbl = rewrite_proc !vec new_spilled in
+    cm := Some new_cm;
+    alloc := Some new_alloc;
+    spilled := new_spilled;
+    vec := new_vec;
+    label_tbl := new_label_tbl
+  end
+  in
   let rec loop () =
     if (not !init) && Hashtbl.length !spilled = 0 then
       ()
     else begin
-      init := true;
-      let new_alloc = build art !vec !ptbl !spilled in
-      remove_nodes new_alloc;
-      let new_cm, new_spilled = coloring new_alloc in
-      let new_vec, new_ptbl = rewrite_proc !vec !ptbl new_spilled in
-      cm := Some new_cm;
-      alloc := Some new_alloc;
-      spilled := new_spilled;
-      vec := new_vec;
-      ptbl := new_ptbl;
+      body ();
       loop ()
     end
   in
   loop ();
-  (Option.get !alloc, Option.get !cm, !vec, !ptbl)
+  (Option.get !alloc, Option.get !cm, !vec, !label_tbl)
 
-let allocate_func vec ptbl art =
-  let alloc, cm, vec, ptbl = allocate_func_aux vec ptbl art in
+let allocate_func seq label_tbl regs =
+  let alloc, cm, seq, label_tbl = allocate_func_aux seq label_tbl regs in
   let reg_of_color =
-    let all = art.all_regs in
+    let all = regs.all_regs in
     let color =
       all |> List.map (Graph.represent alloc.intrf_g)
           |> List.map (Hashtbl.find cm.coloring)
@@ -555,88 +548,51 @@ let allocate_func vec ptbl art =
     Hashtbl.find cm.coloring r
   in
   let act_reg r = 
-    if r = mem_reg then mem_reg else reg_of_color (color r) 
-  in
-  let new_vec = Vector.empty () in
-  let ptbl = list_of_ptbl ptbl in
-  let new_ptbl = Hashtbl.create (List.length ptbl) in
-  let rec rewrite_ptbl idx sum lis = match lis with
-    | (s, i) :: xs when i <= idx + sum ->
-        Hashtbl.add new_ptbl s (idx + sum);
-        rewrite_ptbl idx sum xs
-    | _ -> lis
+    if r = mem_reg then mem_reg else reg_of_color (color r)
   in
   let rewrite_if_reg v = match v with
     | Reg r -> Reg (act_reg r)
     | _ -> v
   in
-  let rec rewrite_vec idx sum plis =
-    if idx = Vector.length vec then
-      ()
+  let rec rewrite_vec i new_vec =
+    if i = Vector.length seq then
+      new_vec
     else begin
-      let plis = rewrite_ptbl idx sum plis in
-      let instr = Vector.get vec idx in
-      let id = idx + sum in
-      let tail ip =
-        Vector.push_back new_vec ip;
-        rewrite_vec (idx + 1) sum plis
+      let instr, label = Vector.get seq i in
+      let instr = match instr with
+        | Move (r, v, i) -> Move (act_reg r, rewrite_if_reg v, i)
+        | Test (a, b, i) -> Test (rewrite_if_reg a, rewrite_if_reg b, i)
+        | Jump (a, i) -> Jump (rewrite_if_reg a, i)
+        | Return i -> Return i
+        | Load (r, v, offset, i) -> Load (act_reg r, rewrite_if_reg v, offset, i)
+        | Store (r, v, offset, i) -> Store (act_reg r, rewrite_if_reg v, offset, i)
+        | PrimCall (r, p, vl, i) -> PrimCall (act_reg r, p, List.map rewrite_if_reg vl, i)
       in
-      match instr with
-        | Move (s, r, _) ->
-            let s = act_reg s in
-            let r = rewrite_if_reg r in
-            if (Reg s) = r then
-              rewrite_vec (idx + 1) (sum - 1) plis
-            else
-              tail (Move (s, r, id))
-        | Test (a, b, _) ->
-            let a = rewrite_if_reg a in
-            let b = rewrite_if_reg b in
-            tail (Test (a, b, id))
-        | Jump (a, _) ->
-            let a = rewrite_if_reg a in
-            Vector.push_back new_vec (Jump (a, id));
-            tail (Jump (a, id))
-        | Return _ -> tail (Return id)
-        | Load (a, b, i, _) ->
-            let a = act_reg a in
-            let b = rewrite_if_reg b in
-            tail (Load (a, b, i, id))
-        | Store (a, b, i, _) ->
-            let a = act_reg a in
-            let b = rewrite_if_reg b in
-            tail (Store (a, b, i, id))
-        | PrimCall (a, p, lis, _) ->
-            let a = act_reg a in
-            let lis = List.map rewrite_if_reg lis in
-            tail (PrimCall (a, p, lis, id))
+      Vector.push_back new_vec (instr, label);
+      rewrite_vec (i + 1) new_vec
     end
   in
-  rewrite_vec 0 0 ptbl;
-  (new_vec, new_ptbl)
+  let new_vec = rewrite_vec 0 (Vector.empty ()) in
+  reset_id new_vec
 
-let allocate_experiment reg_num vec ptbl =
-  let art = make_act_regs reg_num in
-  let caller_sn = List.length art.caller_save_regs in
-  let vec, ptbl = insert_callee_save caller_sn vec ptbl in
-  let ptbl =
-    let lis = Hashtbl.fold (fun x y l -> (x, y) :: l) ptbl [] in
-    Hashtbl.clear ptbl;
-    List.iter (fun (x, y) -> Hashtbl.add ptbl x y) lis;
-    ptbl
-  in
-  allocate_func vec ptbl art
+let allocate_experiment reg_num program =
+  let regs = make_reg_set reg_num in
+  let { signature; label_tbl; seq } = program in
+  let callee_sn = List.length regs.callee_saved_regs in
+  let seq, label_tbl = insert_callee_save callee_sn seq in
+  let seq, label_tbl = allocate_func seq label_tbl regs in
+  { signature; label_tbl; seq }
 
 (*
- (* FIXME : remove function from ptbl *)
+ (* FIXME : remove function from label_tbl *)
 let allocate program reg_num =
-  let art = make_act_regs reg_num in
+  let regs = make_act_regs reg_num in
   let sigtbl, _, _ = program in
   let names, procs =
-    let caller_save_num = List.length art.caller_save_regs in
+    let caller_save_num = List.length regs.caller_save_regs in
     program 
     |> split_program
-    |> List.map (fun (x, y, z) -> (x, (insert_callee_save caller_save_num y, z, art)))
+    |> List.map (fun (x, y, z) -> (x, (insert_callee_save caller_save_num y, z, regs)))
     |> List.split
   in
   let procs = List.map (fun (x, y, z) -> allocate_func x y z) procs in

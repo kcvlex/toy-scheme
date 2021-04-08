@@ -88,3 +88,30 @@ let iter f v =
   for i = 0 to (length v) - 1 do
     f (get v i)
   done
+
+let fold f v acc =
+  let res = ref acc in
+  for i = 0 to (length v) - 1 do
+    let e = get v i in
+    res := f e !res
+  done;
+  !res
+
+let list_of_vector v =
+  let rec aux i =
+    if i = length v then
+      []
+    else
+      (get v i) :: (aux (i + 1))
+  in
+  aux 0
+
+let vector_of_list l =
+  let ret = empty () in
+  let rec aux l = match l with
+    | x :: xs ->
+        push_back ret x;
+        aux xs
+    | [] -> ret
+  in
+  aux l

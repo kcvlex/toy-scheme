@@ -3,14 +3,18 @@ open ThreeAddressCodeType
 
 type t
 
-val analyze : instr_type Vector.t -> (string, int) Hashtbl.t -> t
+val analyze : reg_set ->
+              labeled_instr Vector.t ->
+              label_table -> t
 
-val live_in : t -> int -> reg_set
+val live_in : t -> int -> reg_table
 
-val live_out : t -> int -> reg_set
+val live_out : t -> int -> reg_table
 
-val get_use : t -> int -> reg_set
+val get_use : t -> int -> reg_table
 
-val get_def : t -> int -> reg_set
+val get_def : t -> int -> reg_table
 
 val length : t -> int
+
+val dump : t -> string

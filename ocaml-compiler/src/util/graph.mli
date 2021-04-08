@@ -2,6 +2,8 @@ type 'a t
 
 val make : bool -> 'a t
 
+val add_node : 'a t -> 'a -> unit
+
 val add_edge : 'a t -> 'a -> 'a -> unit
 
 val rm_node : 'a t -> 'a -> unit
