@@ -5,14 +5,14 @@ type t = {
 and clsr_proc = string * string list * string option * clsr_expr
 and clsr_expr =
   | Term of clsr_term
-  | Bind of (string * clsr_expr) list * clsr_expr
+  | Bind of (string * clsr_term) list * clsr_expr
   | Branch of clsr_term * clsr_expr * clsr_expr
-  | Call of clsr_term * clsr_term list
 and clsr_term =
   | Int of int
   | Bool of bool
   | Closure of string * clsr_term list
   | Primitive of SymbolType.primitive_sym
+  | Call of clsr_term * clsr_term list
   | Var of string
   | Nil
   | Quote of AstType.t

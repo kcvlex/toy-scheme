@@ -5,10 +5,9 @@ and common_arg_type = string list
 and extend_arg_type = string option
 and instr_type =
   | Bind of string * value_type
-  | Move of string * value_type
   | Test of value_type * instr_type list * instr_type list
-  | Return
-  | Value of value_type
+  | Return of value_type
+  | Jump of string
   | Call of value_type * value_type list
 and value_type =
   | Int of int

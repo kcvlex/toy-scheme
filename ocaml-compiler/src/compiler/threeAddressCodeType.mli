@@ -3,7 +3,7 @@ open Util
 type t = {
   signature : (string, arguments_type) Hashtbl.t;
   label_tbl : (string, int) Hashtbl.t;
-  seq : (instr_type * string option) Vector.t;
+  seq : labeled_instr Vector.t;
 }
 and instr_type =
   | Bind of reg_type * value_type * int
@@ -24,7 +24,6 @@ and value_type =
   | Primitive of SymbolType.primitive_sym
   | Quote of AstType.t
 and reg_type =
-  | RV
   | CallerSaved of int
   | CalleeSaved of int
   | Argument of int

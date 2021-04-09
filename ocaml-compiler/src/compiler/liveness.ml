@@ -38,13 +38,23 @@ let calc_use_def vec regs =
   let len = Vector.length vec in
   let def = Vector.empty () in
   let use = Vector.empty () in
+  let rec extract_regs l = match l with
+    | (Reg r) :: xs -> r :: (extract_regs xs)
+    | _ :: xs -> extract_regs xs
+    | [] -> []
+  in
   for i = 0 to len - 1 do
     Vector.push_back def (Hashtbl.create 2);
     Vector.push_back use (Hashtbl.create 2);
     let update_def v = Hashtbl.replace (Vector.get def i) v () in
-    let update_use v = match v with
-      | Reg r -> Hashtbl.replace (Vector.get use i) r ()
-      | _ -> ()
+    let update_use v = 
+      let used = match v with
+        | Reg r -> [ r ]
+        | PrimCall (_, l) -> extract_regs l
+        | _ -> []
+      in
+      let aux r = Hashtbl.replace (Vector.get use i) r () in
+      List.iter aux used
     in
     let instr = Vector.get vec i in
     match instr with
@@ -84,7 +94,7 @@ let calc_liveness use def cfg instr_vec regs =
     let os = match (Vector.get instr_vec i) with
       | Return _ -> 
           List.iter (fun x -> Hashtbl.replace os x ()) regs.callee_saved_regs;
-          Hashtbl.replace os RV ();
+          Hashtbl.replace os (Argument 0) ();
           os
       | _ -> os
     in

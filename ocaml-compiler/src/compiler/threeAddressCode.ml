@@ -255,7 +255,7 @@ let string_of_reg r = match r with
   | Argument i -> Printf.sprintf "ARG_%d" i
   | Virtual i -> Printf.sprintf "VTR_%d" i
 
-let string_of_value value = match value with
+let rec string_of_value value = match value with
   | Int i -> string_of_int i
   | Bool true -> "true"
   | Bool false -> "false"
@@ -265,12 +265,23 @@ let string_of_value value = match value with
   | JumpLabel s -> s ^ " (jump)"
   | Primitive p -> string_of_sym (PrimitiveSym p)
   | Quote a -> "`" ^ (Ast.code_of_ast a)
+  | PrimCall (p, l) ->
+      let p = string_of_sym (PrimitiveSym p) in
+      let l = 
+        l |> List.map string_of_value
+          |> String.concat " "
+      in
+      Printf.sprintf "(%s %s)" p l
 
 let string_of_instr instr = match instr with
-  | Move (a, b, _) ->
+  | Bind (a, b, _) ->
       let a = string_of_reg a in
       let b = string_of_value b in
-      Printf.sprintf "%s <- %s" a b
+      Printf.sprintf "%s <- %s (bind)" a b
+  | Move (a, b, _) ->
+      let a = string_of_reg a in
+      let b = string_of_reg b in
+      Printf.sprintf "%s <- %s (move)" a b
   | Test (a, b, _) ->
       let a = string_of_value a in
       let b = string_of_value b in
@@ -285,14 +296,6 @@ let string_of_instr instr = match instr with
       let a = string_of_reg a in
       let b = string_of_value b in
       Printf.sprintf "%d(%s) <- %s" c a b
-  | PrimCall (a, p, l, _) ->
-      let a = string_of_reg a in
-      let p = string_of_sym (PrimitiveSym p) in
-      let l = 
-        l |> List.map string_of_value
-          |> String.concat " "
-      in
-      Printf.sprintf "%s <- (%s %s)" a p l
 
 let string_of_regtbl rs =
   (Hashtbl.fold (fun x _ l -> x :: l) rs [])
@@ -326,18 +329,70 @@ let sample_program =
   let a = Virtual 0 in
   let b = Virtual 1 in
   let c = Virtual 2 in
-  let d = Virtual 3 in
   let seq = [
-    (Move     (a, Int 1,                   0), Some "entry");
-    (PrimCall (b, ADD, [ Reg a; Int 1 ],   1), Some "1");
-    (PrimCall (c, ADD, [ Reg c; Reg b ],   2), None);
-    (PrimCall (a, MUL, [ Reg b; Int 2 ],   3), None);
-    (PrimCall (d, LESS, [ Reg a; Int 10 ], 4), None);
-    (Jump     (JumpLabel "1",              5), None);
-    (Move     (RV, Reg c,                  6), None);
-    (Return   (                            7), None)
+    (Bind   (a, Int 1,                                          0), Some "entry");
+    (Bind   (b, PrimCall (ADD, [ Reg a; Int 1 ]),               1), Some "1");
+    (Bind   (c, PrimCall (ADD, [ Reg c; Reg b ]),               2), None);
+    (Bind   (a, PrimCall (MUL, [ Reg b; Int 2 ]),               3), None);
+    (Test   (PrimCall (LESS, [ Reg a; Int 10 ]), JumpLabel "1", 4), None);
+    (Move   (rv_reg, c,                                         5), None);
+    (Return (                                                   6), None)
   ]
   in
   let seq = Vector.vector_of_list seq in
   let label_tbl = make_label_tbl seq in
   { signature = Hashtbl.create 0; label_tbl; seq; }
+
+let split_program program =
+  let { signature; label_tbl; seq } = program in
+  let funcs =
+    signature
+    |> fun s -> Hashtbl.fold (fun x _ l -> x :: l) s []
+    |> List.map (fun x -> (x, Hashtbl.find label_tbl x))
+    |> List.sort (fun x y -> (snd x) - (snd y))
+  in
+  let order, idxlis = List.split funcs in
+  let rec aux i idxlis vec =
+    if i = Vector.length seq then
+      [ vec ]
+    else begin
+      let instr = Vector.get seq i in
+      match idxlis with
+        | x :: xs when x = i ->
+            let hd = Vector.copy vec in
+            let vec = Vector.empty () in
+            let idxlis = xs in
+            Vector.push_back vec instr;
+            hd :: (aux (i + 1) idxlis vec)
+        | _ ->
+            Vector.push_back vec instr;
+            aux (i + 1) idxlis vec
+    end
+  in
+  let seq_per_func = 
+    let s = aux 0 idxlis (Vector.empty ()) in
+    s |> List.tl
+      |> List.map reset_id
+  in
+  (order, seq_per_func)
+
+let abs_of_value value = match value with
+  | Int i -> AbstractMachineType.Int i
+  | Bool b -> AbstractMachineType.Bool b
+  | Reg r -> AbstractMachineType.Ref (string_of_reg r)
+  | Nil -> AbstractMachineType.Nil
+  | FuncLabel l -> AbstractMachineType.Label l
+  | JumpLabel l -> AbstractMachineType.Label l
+  | Primitive p -> AbstractMachineType.Primitive p
+  | Quote a -> AbstractMachineType.Quote a
+
+let abs_of_instr instr = match instr with
+  | Bind (r, v, _) -> AbstractMachineType.Bind (string_of_reg r, abs_of_value v)
+  | Move (r, v, _) -> AbstractMachineType.Move (string_of_reg r, abs_of_value v)
+  | Test (v, l, _) -> AbstractMachine
+let rec to_abs_function lis = match lis with
+  | x :: xs -> (match x with
+
+let to_abs_program program =
+  let 
+  let { signature; label_tbl; seq } = program in

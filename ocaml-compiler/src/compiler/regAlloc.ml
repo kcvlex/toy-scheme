@@ -20,7 +20,6 @@ type color_mapping = {
 
 let offset = 10000
 let vreg_slot = SlotNumber.make (fun x -> Virtual (x + offset))
-let dummy_reg = Virtual (-1)
 let mem_reg = Virtual (-2)
   
 let list_of_label_tbl label_tbl =
@@ -55,7 +54,7 @@ let insert_callee_save rnum vec =
   Vector.set vec 0 (fst (Vector.get vec 0), None);
   for i = 0 to rnum - 1 do
     let reg = SlotNumber.fresh vreg_slot in
-    let instr = Move (reg, Reg (CalleeSaved i), -1) in
+    let instr = Move (reg, CalleeSaved i, -1) in
     Vector.push_back sv reg;
     Vector.push_back new_vec (instr, (if i = 0 then name else None))
   done;
@@ -63,7 +62,7 @@ let insert_callee_save rnum vec =
     | (Return _, _)->
         for i = 0 to rnum - 1 do
           let reg = Vector.get sv i in
-          let instr = Move (CalleeSaved i, Reg reg, -1) in
+          let instr = Move (CalleeSaved i, reg, -1) in
           Vector.push_back new_vec (instr, None)
         done;
         Vector.push_back new_vec e
@@ -71,39 +70,6 @@ let insert_callee_save rnum vec =
   in
   Vector.iter pushback vec;
   reset_id new_vec
-
-let split_program program =
-  let { signature; label_tbl; seq } = program in
-  let funcs =
-    signature
-    |> fun s -> Hashtbl.fold (fun x _ l -> x :: l) s []
-    |> List.map (fun x -> (x, Hashtbl.find label_tbl x))
-    |> List.sort (fun x y -> (snd x) - (snd y))
-  in
-  let order, idxlis = List.split funcs in
-  let rec aux i idxlis vec =
-    if i = Vector.length seq then
-      [ vec ]
-    else begin
-      let instr = Vector.get seq i in
-      match idxlis with
-        | x :: xs when x = i ->
-            let hd = Vector.copy vec in
-            let vec = Vector.empty () in
-            let idxlis = xs in
-            Vector.push_back vec instr;
-            hd :: (aux (i + 1) idxlis vec)
-        | _ ->
-            Vector.push_back vec instr;
-            aux (i + 1) idxlis vec
-    end
-  in
-  let seq_per_func = 
-    let s = aux 0 idxlis (Vector.empty ()) in
-    s |> List.tl
-      |> List.map reset_id
-  in
-  (order, seq_per_func)
 
 let precolor ras g =
   let rec add x lis = match lis with
@@ -136,7 +102,6 @@ let print_instr vec label_tbl =
 (* Build interference graph *)
 let build regs vec label_tbl spilled =
   let g = Graph.make false in
-  Graph.add_node g dummy_reg;
   print_instr vec label_tbl;
   let liveness = Liveness.analyze regs vec label_tbl in
   print_endline ""; print_endline (Liveness.dump liveness);
@@ -146,20 +111,15 @@ let build regs vec label_tbl spilled =
     Hashtbl.iter (fun x _ -> Graph.add_edge g r x) live_out
   in
   let f instr = match instr with
+    | Bind (r, _, i) -> add_edges r i
     | Load (r, _, _, i) -> add_edges r i
-    | PrimCall (r, _, _, i) -> add_edges r i
-    | Move (lhs, s, i) ->
-        let rhs = match s with
-            | Reg reg -> reg
-            | _ -> dummy_reg
-        in
+    | Move (d, s, i) ->
         let live_out = Liveness.live_out liveness i in
-        Hashtbl.iter (fun x _-> if x != rhs then Graph.add_edge g lhs x else ()) live_out;
+        Hashtbl.iter (fun x _-> if x != s then Graph.add_edge g d x else ()) live_out;
     | _ -> ()
   in
   Vector.iter (fun (x, _) -> f x) vec;
   precolor regs g;
-  Graph.rm_node g dummy_reg;
   print_endline ""; print_endline (Graph.dump g string_of_reg);
   let mp =
     let new_mp = Hashtbl.create 8 in
@@ -414,20 +374,40 @@ let coloring alloc =
 let rewrite_proc seq spill =
   let new_vec = Vector.empty () in
   let was_spilled x = Hashtbl.mem spill x in
-  let replace_reg v label = match v with
+  let rec replace_reg v label = match v with
     | Reg r when was_spilled r ->
         let vr = SlotNumber.fresh vreg_slot in
         Vector.push_back new_vec (Load (vr, Reg mem_reg, 0, -1), label);
         (Reg vr, None)
+    | PrimCall (p, vl) ->
+        let rec aux lis label = match lis with
+          | x :: xs ->
+              let x, label = replace_reg x label in
+              let xs, label = aux xs label in
+              (x :: xs, label)
+          | [] -> ([], label)
+        in
+        let vl, label = aux vl label in
+        (PrimCall (p, vl), label)
     | _ -> (v, label)
   in
   let rewrite_instr instr label = match instr with
-    | Move (r, s, i) ->
+    | Bind (r, s, i) ->
         let s, label = replace_reg s label in
         if was_spilled r then
           Vector.push_back new_vec (Store (mem_reg, s, 0, i), label)
         else
-          Vector.push_back new_vec (Move (r, s, i), label)
+          (match s with
+            | Reg s -> Vector.push_back new_vec (Move (r, s, i), label)
+            | _ -> Vector.push_back new_vec (Bind (r, s, i), label))
+    | Move (d, s, i) ->
+        let s, label = replace_reg (Reg s) label in
+        if was_spilled d then
+          Vector.push_back new_vec (Store (mem_reg, s, 0, i), label)
+        else
+          (match s with
+            | Reg s -> Vector.push_back new_vec (Move (d, s, i), label)
+            | _ -> Vector.push_back new_vec (Bind (d, s, i), label))
     | Test (a, b, i) ->
         let a, label = replace_reg a label in
         let b, label = replace_reg b label in
@@ -453,22 +433,6 @@ let rewrite_proc seq spill =
           Vector.push_back new_vec (Store (src, base, i, j), None)
         end else begin
           Vector.push_back new_vec (Store (src, base, i, j), label);
-        end
-    | PrimCall (r, p, vl, i) ->
-        let rec aux lis label = match lis with
-          | x :: xs ->
-              let x, label = replace_reg x label in
-              let xs, label = aux xs label in
-              (x :: xs, label)
-          | [] -> ([], label)
-        in
-        let vl, label = aux vl label in
-        if was_spilled r then begin
-          let r = SlotNumber.fresh vreg_slot in
-          Vector.push_back new_vec (PrimCall (r, p, vl, i), label);
-          Vector.push_back new_vec (Store (r, Reg mem_reg, 0, -1), None);
-        end else begin
-          Vector.push_back new_vec (PrimCall (r, p, vl, i), label)
         end
   in
   let rec rewrite i =
@@ -530,6 +494,19 @@ let allocate_func_aux vec label_tbl regs =
   loop ();
   (Option.get !alloc, Option.get !cm, !vec, !label_tbl)
 
+let remove_redundant vec =
+  let rec aux lis = match lis with
+    | x :: xs ->
+        let instr, label = x in
+        (match instr with
+          | Move (a, b, _) when a = b -> aux xs
+          | _ -> x :: (aux xs))
+    | [] -> []
+  in
+  vec |> Vector.list_of_vector
+      |> aux
+      |> Vector.vector_of_list
+
 let allocate_func seq label_tbl regs =
   let alloc, cm, seq, label_tbl = allocate_func_aux seq label_tbl regs in
   let reg_of_color =
@@ -550,8 +527,9 @@ let allocate_func seq label_tbl regs =
   let act_reg r = 
     if r = mem_reg then mem_reg else reg_of_color (color r)
   in
-  let rewrite_if_reg v = match v with
+  let rec rewrite_if_reg v = match v with
     | Reg r -> Reg (act_reg r)
+    | PrimCall (p, l) -> PrimCall (p, List.map rewrite_if_reg l)
     | _ -> v
   in
   let rec rewrite_vec i new_vec =
@@ -560,20 +538,20 @@ let allocate_func seq label_tbl regs =
     else begin
       let instr, label = Vector.get seq i in
       let instr = match instr with
-        | Move (r, v, i) -> Move (act_reg r, rewrite_if_reg v, i)
+        | Bind (r, v, i) -> Bind (act_reg r, rewrite_if_reg v, i)
+        | Move (d, s, i) -> Move (act_reg d, act_reg s, i)
         | Test (a, b, i) -> Test (rewrite_if_reg a, rewrite_if_reg b, i)
         | Jump (a, i) -> Jump (rewrite_if_reg a, i)
         | Return i -> Return i
         | Load (r, v, offset, i) -> Load (act_reg r, rewrite_if_reg v, offset, i)
         | Store (r, v, offset, i) -> Store (act_reg r, rewrite_if_reg v, offset, i)
-        | PrimCall (r, p, vl, i) -> PrimCall (act_reg r, p, List.map rewrite_if_reg vl, i)
       in
       Vector.push_back new_vec (instr, label);
       rewrite_vec (i + 1) new_vec
     end
   in
   let new_vec = rewrite_vec 0 (Vector.empty ()) in
-  reset_id new_vec
+  reset_id (remove_redundant new_vec)
 
 let allocate_experiment reg_num program =
   let regs = make_reg_set reg_num in

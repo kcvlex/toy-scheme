@@ -1,13 +1,13 @@
 open AbstractMachineType
 
 type frame_type = {
-  mutable cur : AbstractMachineType.instr_type list;
-  mutable mem : (string, value_type) Hashtbl.t;
+  cur : AbstractMachineType.instr_type list;
+  mem : (string, value_type) Hashtbl.t;
 }
 
 type t = {
   mutable heap : value_type list; (* Excpect Cons *)
-  mutable frames : frame_type list;
+  mutable frames : frame_type Stack.t;
   mutable ra : value_type option;
   program : AbstractMachineType.t;
 }
@@ -19,23 +19,8 @@ let rec translate_proc labels clo =
   let recv v = translate_value labels v in
   match clo with
     | ClosureType.Term t -> [ Value (recv t) ]
-    | ClosureType.Bind (l, body) ->
-        let fn st = 
-          let s, t = st in
-          match t with
-            | ClosureType.Term (ClosureType.Int i) -> [ Move (s, Int i) ]
-            | ClosureType.Term (ClosureType.Bool b) -> [ Move (s, Bool b) ]
-            | ClosureType.Term (ClosureType.Primitive p) -> [ Move (s, Primitive p) ]
-            | ClosureType.Term (ClosureType.Quote a) -> [ Bind (s, Quote a) ]
-            | ClosureType.Term ((ClosureType.ClosureRef _) as c) -> [ Bind (s, translate_closure c []) ]
-            | ClosureType.Term (ClosureType.Closure (c, cl)) ->
-                let c = recv (ClosureType.Var c) in
-                [ Bind (s, Cons (c, Allocate (List.map recv cl))) ]
-            | _ ->
-                let rv = recf t in
-                List.append rv [ Bind (s, RA) ]
-        in
-        let binds = l |> List.map fn |> List.flatten in
+    | ClosureType.Bind (lis, body) ->
+        let binds = List.map (fun (s, t) -> Bind (s, translate_value labels t)) in
         let body = translate_proc labels body in
         List.append binds body
     | ClosureType.Branch (p, t1, t2) ->
@@ -52,11 +37,7 @@ and translate_value labels value =
     | ClosureType.Primitive s -> Primitive s
     | ClosureType.Closure (s, l) -> Cons (Ref s, Allocate (List.map recf l))
     | ClosureType.Var "DUMMY" -> Nil
-    | ClosureType.Var s ->
-        if Hashtbl.mem labels s then
-          Label s
-        else
-          Ref s
+    | ClosureType.Var s -> if Hashtbl.mem labels s then Label s else Ref s
     | ClosureType.Nil -> Nil
     | ClosureType.Quote a -> Quote a
     | ClosureType.ClosureRef _ -> translate_closure value []
@@ -66,19 +47,6 @@ and translate_closure c il = match c with
   | ClosureType.Var s -> AccessClosure (s, il)
   | _ -> raise (Invalid_argument "AAA")
 
-
-let rec relocate_return seq = match seq with
-  | Test (p, t1, t2) :: Return :: xs ->
-      let t1 = relocate_return (List.append t1 [ Return ]) in
-      let t2 = relocate_return (List.append t2 [ Return ]) in
-      let test = Test (p, t1, t2) in
-      let xs = relocate_return xs in
-      test :: xs
-  | x :: xs -> x :: (relocate_return xs)
-  | [] -> []
-
-
-
 let translate (clsr_prog: ClosureType.t) =
   let sz = List.length clsr_prog.procs in
   let names = fst (List.split clsr_prog.procs) in
@@ -87,16 +55,11 @@ let translate (clsr_prog: ClosureType.t) =
     List.iter (fun x -> Hashtbl.add tbl x ()) (entry_label :: names); tbl
   in
   let program =
-    let trans body =
-      body |> translate_proc labels
-           |> fun x -> List.append x [ Return ]
-           |> relocate_return
-    in
-    let tp = 
-      clsr_prog.procs 
-      |> List.split 
+    let tp =
+      clsr_prog.procs
+      |> List.split
       |> snd
-      |> List.map (fun (c, l, opt, body) -> (Some c, l, opt, trans body))
+      |> List.map (fun (c, l, opt, body) -> (Some c, l, opt, translate_proc labels body))
     in
     let program =
       let tbl = Hashtbl.create sz in
@@ -116,31 +79,27 @@ let translate (clsr_prog: ClosureType.t) =
     mem = Hashtbl.create 8;
   }
   in
+  let frames = Stack.create () in
+  Stack.push frame frames;
   {
     heap = [];
-    frames = [ frame ];
+    frames;
     ra = None;
-    program = program;
+    program;
   }
 
-let push_mem machine n v = 
-  let frames = machine.frames in
-  let frames = match frames with
-    | x :: xs ->
-        let { mem; cur } = x in
-        Hashtbl.add mem n v;
-        let x = { mem; cur } in
-        x :: xs
-    | [] -> raise (Invalid_argument "Empty frame")
-  in
-  machine.frames <- frames
+let push_mem machine n v =
+  let { mem; cur } = Stack.pop machine.frames in
+  Hashtbl.add mem n v;
+  Stack.push { mem; cur } machine.frames;
 
 let advance machine =
-  let hd, tl = (List.hd machine.frames, List.tl machine.frames) in
-  (match hd.cur with
-    | _ :: xs -> hd.cur <- xs
-    | [] -> raise (Invalid_argument "must return"));
-  machine.frames <- (hd :: tl)
+  let { mem; cur } = Stack.pop machine.frames in
+  let cur = match cur with
+    | _ :: xs -> xs
+    | [] -> raise (Invalid_argument "must return")
+  in
+  Stack.push { cur; mem } machine.frames
 
 let consume_result machine =
   let r = Option.get machine.ra in
