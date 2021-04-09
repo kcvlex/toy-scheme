@@ -88,11 +88,6 @@ let translate (clsr_prog: ClosureType.t) =
     program;
   }
 
-let push_mem machine n v =
-  let { mem; cur } = Stack.pop machine.frames in
-  Hashtbl.add mem n v;
-  Stack.push { mem; cur } machine.frames;
-
 let advance machine =
   let { mem; cur } = Stack.pop machine.frames in
   let cur = match cur with
@@ -100,12 +95,6 @@ let advance machine =
     | [] -> raise (Invalid_argument "must return")
   in
   Stack.push { cur; mem } machine.frames
-
-let consume_result machine =
-  let r = Option.get machine.ra in
-  machine.ra <- None; r
-
-let produce_result machine v = machine.ra <- Some v
 
 let restrict_1arg lis = match lis with
   | x :: [] -> x
@@ -134,6 +123,38 @@ let rec cons_of_list lis = match lis with
   | x :: xs -> Cons (x, cons_of_list xs)
   | [] -> Nil
 
+let rec eval_step machine = 
+  let { mem; cur } = Stack.pop machine.frames in
+  let frame = match cur with
+    | [] -> raise (Invalid_argument "must return")
+    | hd :: tl -> match hd with
+      | Bind (s, v) ->
+          let v = eval_value machine mem v in
+          Hashtbl.replace mem s v;
+          { mem; cur = tl }
+      | Test (p, e1, e2) -> (match tl with
+        | [] ->
+            let p = match eval_value machine mem p with
+              | Bool b -> b
+              | _ -> raise (Invalid_argument "Condition must be bool")
+            in
+            let next = if p then e1 else e2 in
+            { mem; cur = next }
+        | _ -> raise (Invalid_argument "Test"))
+      | Return v ->
+          let v = eval_value machine mem v in
+          machine.ra := Some v;
+          { mem; cur = [] }
+      | Jump s ->
+          let _, _, _, body = Hashtbl.find machine.program s in
+          { mem; cur = body }
+      | Call (f, args) ->
+          let f = eval_value machine mem f in
+          let args = List.map (eval_value machine mem) args in
+          Stack.push { mem; cur = tl } machine.frames;
+          make_call_frame machine f args
+  in
+  Stack.push frame machine.frames
 let rec eval_step machine = match machine.frames with
   | [] -> ()
   | f :: _ -> 
@@ -145,11 +166,11 @@ let rec eval_step machine = match machine.frames with
             | Bind (s, v) ->
                 eval_value machine v;
                 let v = consume_result machine in
-                push_mem machine s v; advance machine
+                update_mem machine s v; advance machine
             | Move (s, v) ->
                 eval_value machine v;
                 let v = consume_result machine in
-                push_mem machine s v; advance machine
+                update_mem machine s v; advance machine
             | Test (p, t1, t2) ->
                 eval_value machine p;
                 let p = consume_result machine in

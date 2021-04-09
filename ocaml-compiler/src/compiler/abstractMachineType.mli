@@ -13,6 +13,7 @@ and value_type =
   | Int of int
   | Bool of bool
   | Primitive of SymbolType.primitive_sym
+  | PrimCall of SymbolType.primitive_sym * value_type list
   | Label of string
   | Ref of string
   | Allocate of value_type list

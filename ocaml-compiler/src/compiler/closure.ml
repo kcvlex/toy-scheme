@@ -190,10 +190,6 @@ and ast_of_clo_term term = match term with
       let slis = List.map ast_of_clo_term slis in
       let slis = AstType.Apply (AstType.Symbol (PrimitiveSym LIST), slis) in
       AstType.Apply (AstType.Symbol (PrimitiveSym CONS), [ s; slis ])
-  | Call (f, args) ->
-      let f = ast_of_clo_term f in
-      let args = List.map ast_of_clo_term args in
-      AstType.Apply (AstType.Symbol (CommonSym "__call"), f :: args)
   | Var "DUMMY" -> AstType.Apply (AstType.Symbol (PrimitiveSym LIST), [ AstType.Num 0 ])
   | Var s -> AstType.Symbol (CommonSym s)
   | Nil -> AstType.Nil
