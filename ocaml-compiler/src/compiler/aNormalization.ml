@@ -35,6 +35,7 @@ let rec a_normalize cps = match cps with
       let t = t |> a_normalize |> extract_term in
       let bind = BindValue (s, t) in
       Bind ([ bind ], a_normalize body)
+  | CpsType.Ref (PrimitiveSym p) -> Term (Primitive p)
   | CpsType.Ref s -> Term (Ref (string_of_sym s))
   | CpsType.Branch (a, b, c) ->
       let a = a |> a_normalize |> extract_term in
@@ -73,7 +74,7 @@ let rec lift_branch anf = match anf with
               let s = SlotNumber.fresh branch_slot in
               let e = Lambda ([], None, e) in
               let bind = BindValue (s, e) in
-              (Some bind, Call (e, []))
+              (Some bind, Call (Ref s, []))
       in
       let binding b body = match b with
         | Some b -> Bind ([ b ], body)

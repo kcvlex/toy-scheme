@@ -21,10 +21,10 @@ let validate_regset rset lis =
 
 let () =
   let sample = ThreeAddressCode.sample_program in
-  let label_tbl = sample.label_tbl in
+  let ltbl = sample.ltbl in
   let seq = sample.seq in
   let regs = ThreeAddressCode.make_reg_set (1, 1, 1) in
-  let liveness = Liveness.analyze regs seq label_tbl in
+  let liveness = Liveness.analyze regs seq ltbl in
   let vr i = ThreeAddressCodeType.Virtual i in
   let cer i = ThreeAddressCodeType.CallerSaved i in
   let cee i = ThreeAddressCodeType.CalleeSaved i in

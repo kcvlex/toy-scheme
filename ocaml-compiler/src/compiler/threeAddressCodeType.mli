@@ -2,7 +2,7 @@ open Util
 
 type t = {
   signature : (string, arguments_type) Hashtbl.t;
-  label_tbl : (string, int) Hashtbl.t;
+  ltbl : (string, int) Hashtbl.t;
   seq : labeled_instr Vector.t;
 }
 and instr_type =
@@ -19,16 +19,15 @@ and value_type =
   | Reg of reg_type
   | Nil
   | PrimCall of SymbolType.primitive_sym * value_type list
+  | Primitive of SymbolType.primitive_sym
   | FuncLabel of string
   | JumpLabel of string
-  | Primitive of SymbolType.primitive_sym
   | Quote of AstType.t
 and reg_type =
   | CallerSaved of int
   | CalleeSaved of int
   | Argument of int
   | Virtual of int
-  | RA
 and arguments_type = clsr_arg_type * common_arg_type * extend_arg_type
 and clsr_arg_type = string option
 and common_arg_type = string list

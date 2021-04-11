@@ -36,11 +36,15 @@ let rec collect_fv anf name defined tbl =
     | AnfType.Term t -> collect_fv_term t name defined tbl
     | AnfType.Bind (sl, body) ->
         let aux1 x defined = match x with
-          | AnfType.BindValue (s, v) ->
-              collect_fv_term v s defined tbl;
+          | AnfType.BindValue (s, v) -> 
+              let name = match v with
+                | AnfType.Lambda _ -> s
+                | _ -> name
+              in
+              collect_fv_term v name defined tbl;
               SS.add s defined
           | AnfType.BindCall (s, f, args) ->
-              List.iter (fun v -> collect_fv_term v s defined tbl) (f :: args);
+              List.iter (fun v -> collect_fv_term v name defined tbl) (f :: args);
               SS.add s defined
         in
         let rec aux2 lis defined = match lis with
@@ -134,6 +138,7 @@ let rec closure_trans_aux (anf: AnfType.t)
               let f = fn s f binds in
               let args = List.map (fun t -> fn s t binds) args in
               let call = Call (f, args) in
+              let binds = SS.add s binds in
               ((s, call), binds)
         in
         let rec aux2 lis binds = match lis with
@@ -183,13 +188,17 @@ let rec ast_of_clo_expr expr = match expr with
 and ast_of_clo_term term = match term with
   | Int i -> AstType.Num i
   | Bool b -> AstType.Bool b
-  | Primitive APPLY -> AstType.Symbol (CommonSym "apply-clo")
-  | Primitive p -> AstType.Symbol (PrimitiveSym p)
   | Closure (s, slis) ->
       let s = AstType.Symbol (CommonSym s) in
       let slis = List.map ast_of_clo_term slis in
       let slis = AstType.Apply (AstType.Symbol (PrimitiveSym LIST), slis) in
       AstType.Apply (AstType.Symbol (PrimitiveSym CONS), [ s; slis ])
+  | Call (f, args) ->
+      let f = ast_of_clo_term f in
+      let args = List.map ast_of_clo_term args in
+      AstType.Apply (AstType.Symbol (CommonSym "__call"), f :: args);
+  | Primitive APPLY -> AstType.Symbol (CommonSym "apply-clo")
+  | Primitive p -> AstType.Symbol (PrimitiveSym p)
   | Var "DUMMY" -> AstType.Apply (AstType.Symbol (PrimitiveSym LIST), [ AstType.Num 0 ])
   | Var s -> AstType.Symbol (CommonSym s)
   | Nil -> AstType.Nil
