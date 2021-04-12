@@ -19,7 +19,7 @@ let entry_label = "entry"
 let rec translate_proc labels clo = match clo with
   | ClosureType.Term t ->
       let v, vl = translate_value labels t in
-      List.append [ Return v ] vl
+      List.append vl [ Return v ]
   | ClosureType.Bind (lis, body) ->
       let rec aux lis = match lis with
         | (s, t) :: xs ->
@@ -127,15 +127,26 @@ let restrict_2arg lis = match lis with
   | x1 :: x2 :: [] -> (x1, x2)
   | _ -> raise (Invalid_argument "must be 2 argument")
 
+let rec follow_dlist v idxlis = match (v, idxlis) with
+  | (DList (x :: xs), y :: ys) ->
+      if y = 0 then follow_dlist x ys else follow_dlist (DList xs) ((y - 1) :: ys)
+  | (_, []) -> v
+  | _ -> raise (Invalid_argument "follow_dlist")
+
 let rec follow_dcons v idxlis = match (v, idxlis) with
-  | (DCons (car, cdr), x :: xs) -> 
+  | (DCons (car, cdr), x :: xs) ->
       if x = 0 then follow_dcons car xs else follow_dcons cdr ((x - 1) :: xs)
   | (_, []) -> v
-  | _ -> raise (Invalid_argument "follow_cons")
+  | _ -> raise (Invalid_argument "follow_dcons")
 
-let rec list_of_dcons cons = match cons with
-  | DCons (car, cdr) -> car :: (list_of_dcons cdr)
-  | _ -> [ cons ]
+let list_of_dcons cons =
+  let rec aux cons = match cons with
+    | DCons (car, cdr) -> car :: (aux cdr)
+    | _ -> []
+  in
+  match cons with
+    | DCons _ -> aux cons
+    | _ -> raise (Invalid_argument "not dcons")
 
 let rec dcons_of_list lis = match lis with
   | x :: xs -> DCons (x, dcons_of_list xs)
@@ -157,158 +168,10 @@ let rec string_of_data d = match d with
       d |> list_of_dcons
         |> aux 
         |> String.concat " "
+        |> Printf.sprintf "(%s)"
+  | DList l -> l |> List.map string_of_data |> String.concat " " |> Printf.sprintf "[ %s ]"
   | DPrim p -> string_of_sym (PrimitiveSym p)
   | DQuote a -> Ast.code_of_ast a
-
-let call_prim p args =
-  let extract_int v = match v with
-    | DInt i -> i
-    | _ -> raise (Invalid_argument "must be DInt")
-  in
-  match p with
-    | ADD | SUB | MUL | DIV ->
-        let args = List.map extract_int args in
-        let fold = match p with
-          | ADD -> fun a b -> a + b
-          | SUB -> fun a b -> a - b
-          | MUL -> fun a b -> a * b
-          | DIV -> fun a b -> a / b
-        in
-        let hd, tl = (List.hd args, List.tl args) in
-        let res = List.fold_left (fun a b -> fold b a) hd tl in
-        DInt res
-    | EQ ->
-        let a, b = restrict_2arg args in
-        DBool (a = b)
-    | LESS ->
-        let args = List.map extract_int args in
-        let a, b = restrict_2arg args in
-        DBool (a < b)
-    | NULL ->
-        let a = restrict_1arg args in
-        DBool (a = DNil)
-    | CONS ->
-        let a, b = restrict_2arg args in
-        DCons (a, b)
-    | CAR -> (match args with
-      | (DCons (car, _)) :: [] -> car
-      | _ -> raise (Invalid_argument "CAR"))
-    | CDR -> (match args with
-      | (DCons (_, cdr)) :: [] -> cdr
-      | _ -> raise (Invalid_argument "CDR"))
-    | LIST -> dcons_of_list args
-    | LISTREF ->
-        let a, b = restrict_2arg args in
-        let b = extract_int b in
-        follow_dcons a [ b ]
-    | APPLY | MAP -> raise (Invalid_argument "APPLY")
-    | DISPLAY ->
-        let a = restrict_1arg args in
-        print_endline (string_of_data a);
-        DNil
-
-let make_call_frame machine f args = match f with
-  | DLabel f ->
-      let (cl, cargs, earg, body) = Hashtbl.find machine.funcs f in
-      let cargs = match cl with
-        | Some c -> c :: cargs
-        | None -> cargs
-      in
-      let mem = Hashtbl.create (List.length cargs) in
-      let rec aux clis alis = match (clis, alis) with
-        | (x :: xs, y :: ys) ->
-            Hashtbl.replace mem x y;
-            aux xs ys
-        | ([], []) -> []
-        | ([], ys) -> ys
-        | _ -> raise (Invalid_argument "make_call_frame")
-      in
-      let rem = aux cargs args in
-      let () = match (earg, rem) with
-        | (Some c, _) -> Hashtbl.replace mem c (dcons_of_list args)
-        | (None, []) -> ()
-        | _ -> raise (Invalid_argument "make_call_frame")
-      in
-      { mem; cur = body }
-  | _ -> raise (Invalid_argument "make_call_frame")
-
-let rec eval_value machine mem v = match v with
-  | Int i -> DInt i
-  | Bool b -> DBool b
-  | Primitive p -> DPrim p
-  | Label s -> DLabel s
-  | Nil -> DNil
-  | Quote a -> DQuote a
-  | PrimCall (p, args) ->
-      let args = List.map (eval_value machine mem) args in
-      call_prim p args
-  | Ref s -> Hashtbl.find mem s
-  | Allocate l -> dcons_of_list (List.map (eval_value machine mem) l)
-  | RV -> Option.get machine.ra
-  | Cons (car, cdr) ->
-      let car = eval_value machine mem car in
-      let cdr = eval_value machine mem cdr in
-      DCons (car, cdr)
-  | AccessClosure (s, il) ->
-      let s = Hashtbl.find mem s in
-      follow_dcons s il
-
-let eval_step machine = 
-  let { mem; cur } = Stack.pop machine.frames in
-  let frame = match cur with
-    | [] -> raise (Invalid_argument "must return")
-    | hd :: tl -> match hd with
-      | Bind (s, v) ->
-          let v = eval_value machine mem v in
-          Hashtbl.replace mem s v;
-          { mem; cur = tl }
-      | Test (p, e1, e2) -> (match tl with
-        | [] ->
-            let p = match eval_value machine mem p with
-              | DBool b -> b
-              | _ -> raise (Invalid_argument "Condition must be bool")
-            in
-            let next = if p then e1 else e2 in
-            { mem; cur = next }
-        | _ -> raise (Invalid_argument "Test"))
-      | Return v ->
-          let v = eval_value machine mem v in
-          machine.ra <- Some v;
-          { mem; cur = [] }
-      | Jump v ->
-          let v = eval_value machine mem v in
-          (match v with
-            | DLabel s ->
-                let body = Hashtbl.find machine.jumps s in
-                { mem; cur = body }
-            | _ -> raise (Invalid_argument "Jump"))
-      | Call (f, args) ->
-          let f = eval_value machine mem f in
-          (match f with
-            | DPrim APPLY ->
-                let args = List.map (eval_value machine mem) args in
-                let f, args = restrict_2arg args in
-                let args = list_of_dcons args in
-                Stack.push { mem; cur = tl } machine.frames;
-                make_call_frame machine f args
-            | DPrim p ->
-                let v = eval_value machine mem (PrimCall (p, args)) in
-                machine.ra <- Some v;
-                { mem; cur = tl }
-            | _ ->
-              let args = List.map (eval_value machine mem) args in
-              Stack.push { mem; cur = tl } machine.frames;
-              make_call_frame machine f args)
-  in
-  Stack.push frame machine.frames
-
-let rec eval machine =
-  if Stack.is_empty machine.frames then
-    ()
-  else begin
-    eval_step machine;
-    eval machine
-  end
 
 let make_instr_str indent label lis =
   lis |> String.concat ", "
@@ -340,10 +203,14 @@ let rec string_of_instr indent instr = match instr with
   | Test (p, e1, e2) ->
       let p = string_of_value p in
       let nindent = "  " ^ indent in
+      let lk = indent ^ "[" in
+      let rk = indent ^ "]" in
+      let test_w = "     " in
       let f e =
         e |> List.map (string_of_instr nindent)
+          |> fun x -> List.append (lk :: x) [ rk ]
+          |> List.map (fun x -> test_w ^ x)
           |> String.concat "\n"
-          |> Printf.sprintf "[ %s ]"
       in
       let e1 = f e1 in
       let e2 = f e2 in
@@ -373,3 +240,153 @@ let string_of_program program =
   |> List.fold_left (fun x y -> x ^ "\n\n" ^ y) ""
 
 let string_of_machine machine = string_of_program (machine.funcs, machine.jumps)
+
+let call_prim p args =
+  let extract_int v = match v with
+    | DInt i -> i
+    | _ -> raise (Invalid_argument "must be DInt")
+  in
+  match p with
+    | ADD | SUB | MUL | DIV ->
+        let args = List.map extract_int args in
+        let fold = match p with
+          | ADD -> fun a b -> a + b
+          | SUB -> fun a b -> a - b
+          | MUL -> fun a b -> a * b
+          | DIV -> fun a b -> a / b
+        in
+        let hd, tl = (List.hd args, List.tl args) in
+        let res = List.fold_left (fun a b -> fold a b) hd tl in
+        DInt res
+    | EQ ->
+        let a, b = restrict_2arg args in
+        DBool (a = b)
+    | LESS ->
+        let args = List.map extract_int args in
+        let a, b = restrict_2arg args in
+        DBool (a < b)
+    | NULL ->
+        let a = restrict_1arg args in
+        DBool (a = DNil)
+    | CONS ->
+        let a, b = restrict_2arg args in
+        DCons (a, b)
+    | CAR -> (match args with
+      | (DCons (car, _)) :: [] -> car
+      | _ -> raise (Invalid_argument "CAR"))
+    | CDR -> (match args with
+      | (DCons (_, cdr)) :: [] -> cdr
+      | _ -> raise (Invalid_argument "CDR"))
+    | LIST -> dcons_of_list args
+    | LISTREF ->
+        let a, b = restrict_2arg args in
+        let b = extract_int b in
+        follow_dcons a [ b ]
+    | APPLY | MAP -> raise (Invalid_argument "APPLY")
+    | DISPLAY ->
+        let a = restrict_1arg args in
+        print_endline (string_of_data a);
+        DNil
+
+let rec eval_call machine f args = match f with
+  | DPrim APPLY ->
+      let f, args = restrict_2arg args in
+      let args = list_of_dcons args in
+      eval_call machine f args
+  | DPrim p ->
+      let v = call_prim p args in
+      machine.ra <- Some v
+  | DLabel f ->
+      let (cl, cargs, earg, body) = Hashtbl.find machine.funcs f in
+      let cargs = match cl with
+        | Some c -> c :: cargs
+        | None -> cargs
+      in
+      let mem = Hashtbl.create (List.length cargs) in
+      let rec aux clis alis = match (clis, alis) with
+        | (x :: xs, y :: ys) ->
+            Hashtbl.replace mem x y;
+            aux xs ys
+        | ([], ys) -> ys
+        | _ -> raise (Invalid_argument "eval_call_frame1")
+      in
+      let rem = aux cargs args in
+      let () = match (earg, rem) with
+        | (Some c, _) -> Hashtbl.replace mem c (dcons_of_list rem)
+        | (None, []) -> ()
+        | _ -> print_endline f; print_endline (String.concat "\n" (List.map string_of_data rem)); raise (Invalid_argument "eval_call_frame2")
+      in
+      let frame = { mem; cur = body } in
+      Stack.push frame machine.frames
+  | DCons (f, (DList _ as c)) -> eval_call machine f (c :: args)
+  | _ -> raise (Invalid_argument "eval_call_frame3")
+
+let rec eval_value machine mem v = match v with
+  | Int i -> DInt i
+  | Bool b -> DBool b
+  | Primitive p -> DPrim p
+  | Label s -> DLabel s
+  | Nil -> DNil
+  | Quote a -> DQuote a
+  | PrimCall (p, args) ->
+      let args = List.map (eval_value machine mem) args in
+      let v = call_prim p args in
+      v
+  | Ref s ->
+      if Hashtbl.mem machine.funcs s then
+        DLabel s
+      else if Hashtbl.mem machine.jumps s then
+        DLabel s
+      else
+        Hashtbl.find mem s
+  | Allocate l -> DList (List.map (eval_value machine mem) l)
+  | RV -> Option.get machine.ra
+  | Cons (car, cdr) ->
+      let car = eval_value machine mem car in
+      let cdr = eval_value machine mem cdr in
+      DCons (car, cdr)
+  | AccessClosure (s, il) ->
+      let s = Hashtbl.find mem s in
+      follow_dlist s il
+
+let eval_step machine = 
+  let { mem; cur } = Stack.pop machine.frames in
+  match cur with
+    | [] -> raise (Invalid_argument "must return")
+    | hd :: tl -> match hd with
+      | Bind (s, v) ->
+          let v = eval_value machine mem v in
+          Hashtbl.replace mem s v;
+          Stack.push { mem; cur = tl } machine.frames
+      | Test (p, e1, e2) -> (match tl with
+        | [] ->
+            let p = match eval_value machine mem p with
+              | DBool b -> b
+              | _ -> raise (Invalid_argument "Condition must be bool")
+            in
+            let next = if p then e1 else e2 in
+            Stack.push { mem; cur = next } machine.frames
+        | _ -> raise (Invalid_argument "Test"))
+      | Return v ->
+          let v = eval_value machine mem v in
+          machine.ra <- Some v;
+      | Jump v ->
+          let v = eval_value machine mem v in
+          (match v with
+            | DLabel s ->
+                let body = Hashtbl.find machine.jumps s in
+                Stack.push { mem; cur = body } machine.frames
+            | _ -> raise (Invalid_argument "Jump"))
+      | Call (f, args) ->
+          let f = eval_value machine mem f in
+          let args = List.map (eval_value machine mem) args in
+          Stack.push { mem; cur = tl } machine.frames;
+          eval_call machine f args
+
+let rec eval machine =
+  if Stack.is_empty machine.frames then
+    ()
+  else begin
+    eval_step machine;
+    eval machine
+  end

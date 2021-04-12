@@ -30,5 +30,6 @@ and data_type =
   | DLabel of string
   | DNil
   | DCons of data_type * data_type
+  | DList of data_type list
   | DPrim of SymbolType.primitive_sym
   | DQuote of AstType.t

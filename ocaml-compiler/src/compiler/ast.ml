@@ -13,8 +13,8 @@ let open_map = "open-map"
 let open_map_body =
   "(lambda (rec f l) \
      (if (null? l) \
-         `() \
-          (cons (f (car l)) (rec rec f (cdr l)))))"
+         () \
+         (cons (f (car l)) (rec rec f (cdr l)))))"
 
 let map = "map"
 let map_body = "(lambda (f l) (open-map open-map f l))"
