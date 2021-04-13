@@ -9,7 +9,10 @@
                                   astType
                                   cpsType
                                   closureType
+                                  regsType
                                   abstractMachineType
+                                  threeAddressCodeType
+                                  riscvInstr
                                   anfType)
   (name compiler))
 

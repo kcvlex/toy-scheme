@@ -6,6 +6,9 @@
          testANormalize
          testClosure
          testAbstractMachine
+         testGraph
+         testLivness
+         testRegAlloc
          testDecompiler))
 (env
   (dev

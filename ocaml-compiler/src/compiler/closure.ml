@@ -11,8 +11,12 @@ module SS = Set.Make(String)
 let clsr_slot = SlotNumber.make (fun x -> "__clsr_" ^ (string_of_int x))
 
 let rec find_fv_aux fname flis var idx seed = match flis with
-  | (FVar s) :: xs -> if s = var then ClosureRef (seed, idx) else find_fv_aux fname xs var (idx + 1) seed
-  | (FParentList l) :: [] -> 
+  | (FVar s) :: xs ->
+      if s = var then
+        ClosureRef (seed, idx) 
+      else 
+        find_fv_aux fname xs var (idx + 1) seed
+  | (FParentList l) :: [] ->
       let seed = ClosureRef (seed, idx) in
       find_fv_aux fname l var 0 seed
   | _ -> raise (Invalid_argument ("Not found " ^ var))
@@ -31,30 +35,37 @@ let rec collect_fv anf name defined tbl =
   match anf with
     | AnfType.Term t -> collect_fv_term t name defined tbl
     | AnfType.Bind (sl, body) ->
-        let rec fn sl defined = match sl with
+        let aux1 x defined = match x with
+          | AnfType.BindValue (s, v) -> 
+              let name = match v with
+                | AnfType.Lambda _ -> s
+                | _ -> name
+              in
+              collect_fv_term v name defined tbl;
+              SS.add s defined
+          | AnfType.BindCall (s, f, args) ->
+              List.iter (fun v -> collect_fv_term v name defined tbl) (f :: args);
+              SS.add s defined
+        in
+        let rec aux2 lis defined = match lis with
           | x :: xs ->
-              let s, t = x in
-              (match t with
-                | AnfType.Term ((AnfType.Lambda _) as lmd) -> 
-                    collect_fv_term lmd s defined tbl
-                | _ -> collect_fv t name defined tbl);
-              let defined = SS.add s defined in
-              fn xs defined
+              let defined = aux1 x defined in
+              aux2 xs defined
           | [] -> defined
         in
-        let defined = fn sl defined in
+        let defined = aux2 sl defined in
         collect_fv body name defined tbl
     | AnfType.Branch (p, t1, t2) ->
         recf_t p;
         recf t1;
         recf t2
-    | AnfType.TailCall (f, args) ->
+    | AnfType.Call (f, args) ->
         recf_t f;
         List.iter recf_t args
 and collect_fv_term term name defined tbl = match term with
   | AnfType.Lambda (sl, s, body) ->
       let defined = List.fold_left (fun x y -> SS.add y x) SS.empty (s >:: sl) in
-      Hashtbl.add tbl name SS.empty; collect_fv body name defined tbl
+      Hashtbl.replace tbl name SS.empty; collect_fv body name defined tbl
   | AnfType.Ref s ->
       if SS.mem s defined then
         ()
@@ -101,7 +112,7 @@ let rec closure_trans_aux (anf: AnfType.t)
     | AnfType.Term t -> Term (modify_term t cname clis binds)
     | AnfType.Bind (slis, body) ->
         let fn s t binds = match t with
-          | AnfType.Term (AnfType.Lambda (al, a, body)) ->
+          | AnfType.Lambda (al, a, body) ->
               let lbinds = List.fold_left (fun x y -> SS.add y x) SS.empty (a >:: al) in
               let lis = !allfv |> SS.filter (fun x -> SS.mem x binds) |> SS.elements in
               let pass_clis = List.fold_left (fun x y -> (FVar y) :: x) [ FParentList clis ] lis in
@@ -115,20 +126,29 @@ let rec closure_trans_aux (anf: AnfType.t)
                 List.fold_left (fun x y -> 
                   (modify_term (AnfType.Ref y) cname clis binds) :: x) parent_clis lis 
               in
-              (s, Term (Closure (gs, make_cl)))
-          | AnfType.Term t -> (s, Term (modify_term t cname clis binds))
-          | _ -> (s, closure_trans_aux t cname clis binds fvtbl)
+              Closure (gs, make_cl)
+          | _ -> modify_term t cname clis binds
         in
-        let rec fnr sl binds = match sl with
-          | x :: xs ->
-              let s, t = x in
-              let _, t = fn s t binds in
+        let aux1 x binds = match x with
+          | AnfType.BindValue (s, t) ->
+              let t = fn s t binds in
               let binds = SS.add s binds in
-              let xs, binds = fnr xs binds in
-              ((s, t) :: xs, binds)
+              ((s, t), binds)
+          | AnfType.BindCall (s, f, args) ->
+              let f = fn s f binds in
+              let args = List.map (fun t -> fn s t binds) args in
+              let call = Call (f, args) in
+              let binds = SS.add s binds in
+              ((s, call), binds)
+        in
+        let rec aux2 lis binds = match lis with
+          | x :: xs ->
+              let x, binds = aux1 x binds in
+              let xs, binds = aux2 xs binds in
+              (x :: xs, binds)
           | [] -> ([], binds)
         in
-        let slis, binds = fnr slis binds in
+        let slis, binds = aux2 slis binds in
         let body = closure_trans_aux body cname clis binds fvtbl in
         Bind (slis, body)
     | AnfType.Branch (p, t1, t2) ->
@@ -136,10 +156,11 @@ let rec closure_trans_aux (anf: AnfType.t)
         let t1 = recf t1 in
         let t2 = recf t2 in
         Branch (p, t1, t2)
-    | AnfType.TailCall (f, args) ->
+    | AnfType.Call (f, args) ->
         let f = modify_term f cname clis binds in
         let args = List.map (fun x -> modify_term x cname clis binds) args in
-        Call (f, args)
+        let call = Call (f, args) in
+        Term call
 
 let closure_trans anf =
   procs := [];
@@ -154,7 +175,7 @@ let rec ast_of_clo_expr expr = match expr with
   | Bind (slis, body) ->
       let slis =
         let a, b = List.split slis in
-        let b = List.map ast_of_clo_expr b in
+        let b = List.map ast_of_clo_term b in
         List.combine a b
       in
       let body = ast_of_clo_expr body in
@@ -164,20 +185,20 @@ let rec ast_of_clo_expr expr = match expr with
       let b = ast_of_clo_expr b in
       let c = ast_of_clo_expr c in
       AstType.Branch (a, b, c)
-  | Call (f, args) ->
-      let f = ast_of_clo_term f in
-      let args = List.map ast_of_clo_term args in
-      AstType.Apply (AstType.Symbol (CommonSym "__call"), f :: args)
 and ast_of_clo_term term = match term with
   | Int i -> AstType.Num i
   | Bool b -> AstType.Bool b
-  | Primitive APPLY -> AstType.Symbol (CommonSym "apply-clo")
-  | Primitive p -> AstType.Symbol (PrimitiveSym p)
   | Closure (s, slis) ->
       let s = AstType.Symbol (CommonSym s) in
       let slis = List.map ast_of_clo_term slis in
       let slis = AstType.Apply (AstType.Symbol (PrimitiveSym LIST), slis) in
       AstType.Apply (AstType.Symbol (PrimitiveSym CONS), [ s; slis ])
+  | Call (f, args) ->
+      let f = ast_of_clo_term f in
+      let args = List.map ast_of_clo_term args in
+      AstType.Apply (AstType.Symbol (CommonSym "__call"), f :: args);
+  | Primitive APPLY -> AstType.Symbol (CommonSym "apply-clo")
+  | Primitive p -> AstType.Symbol (PrimitiveSym p)
   | Var "DUMMY" -> AstType.Apply (AstType.Symbol (PrimitiveSym LIST), [ AstType.Num 0 ])
   | Var s -> AstType.Symbol (CommonSym s)
   | Nil -> AstType.Nil
