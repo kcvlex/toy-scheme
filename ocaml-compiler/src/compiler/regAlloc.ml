@@ -101,7 +101,7 @@ let print_instr vec ltbl =
 let build regs vec ltbl spilled =
   let g = Graph.make false in
   print_instr vec ltbl;
-  let liveness = Liveness.analyze regs vec ltbl in
+  let liveness = Liveness.analyze regs vec ltbl is_memreg in
   print_endline ""; print_endline (Liveness.dump liveness);
   let mp = Hashtbl.create 8 in
   let add_edges r i =
@@ -114,9 +114,13 @@ let build regs vec ltbl spilled =
     | Move (d, s, i) ->
         let live_out = Liveness.live_out liveness i in
         Hashtbl.iter (fun x _-> if x != s then Graph.add_edge g d x else ()) live_out;
+        (match (d, s) with (Virtual _, Virtual _) -> Hashtbl.add mp (d, s) () | _ -> ())
     | _ -> ()
   in
   Vector.iter (fun (x, _) -> f x) vec;
+  g |> Graph.all_nodes
+    |> List.filter is_memreg
+    |> List.iter (Graph.rm_node g);
   precolor regs g;
   print_endline ""; print_endline (Graph.dump g string_of_reg);
   let mp =
@@ -132,6 +136,7 @@ let build regs vec ltbl spilled =
     in
     Hashtbl.iter (fun (x, y) _ -> begin add x; add y end) mp; tbl
   in
+  print_endline (string_of_int regs.reg_sum);
   {
     regs = regs;
     proc = vec;
@@ -143,18 +148,44 @@ let build regs vec ltbl spilled =
     stack = Stack.create ()
   }
 
+let briggs_strategy alloc n1 n2 =
+  let k = alloc.regs.reg_sum in
+  let copy = Graph.copy alloc.intrf_g in
+  Graph.contraction copy n1 n2;
+  let neig = Graph.succ copy n1 in
+  let neig =
+    neig |> List.map (fun x -> (x, Graph.degree copy x))
+         |> List.filter (fun (_, d) -> k <= d) 
+  in
+  List.length neig < k
+
+(* memo : george_strategy alloc n1 n2 = george_stragety alloc n2 n1 *)
+let george_strategy alloc n1 n2 =
+  let k = alloc.regs.reg_sum in
+  let g = alloc.intrf_g in
+  let neig = Graph.succ g n1 in
+  let check x = 
+    if Graph.has_edge g x n2 then
+      true
+    else if Graph.degree g n2 < k then
+      true
+    else
+      false
+  in
+  neig
+  |> List.map check
+  |> List.fold_left (fun x y -> x && y) true
+
 (* FIXME *)
 let check_coalesce alloc n1 n2 =
   if Graph.has_edge alloc.intrf_g n1 n2 then
     false
-  else begin
-    let upper = alloc.regs.reg_sum in
-    let tbl = Hashtbl.create upper in
-    let add s = List.iter (fun x -> Hashtbl.replace tbl x ()) s in
-    add (Graph.succ alloc.intrf_g n1);
-    add (Graph.succ alloc.intrf_g n2);
-    Hashtbl.length tbl < upper
-  end
+  else if briggs_strategy alloc n1 n2 then
+    true
+  else if george_strategy alloc n1 n2 then
+    true
+  else
+    false
 
 let rm_move_pair alloc dst src =
   Hashtbl.remove alloc.move_pair (dst, src);
@@ -174,8 +205,8 @@ let rm_self_loop alloc =
 
 let exec_coalesce alloc dst src =
   Graph.contraction alloc.intrf_g dst src;
-  Printf.printf "Coalesce : %s %s" (string_of_reg dst) (string_of_reg src);
-  rm_self_loop alloc;
+  Printf.printf "Coalesce : %s %s\n" (string_of_reg dst) (string_of_reg src);
+  rm_self_loop alloc; 
   rm_move_pair alloc dst src
 
 let sort_by_deg alloc set =
@@ -199,6 +230,8 @@ let simplify alloc =
     |> List.map (fun x -> (x, Graph.degree alloc.intrf_g x))
     |> List.sort (fun x y -> (snd x) - (snd y))
   in
+  Printf.printf "[ %s ]\n" (String.concat " " (List.map string_of_reg (fst (List.split deg))));
+  Printf.printf "[ %s ]\n" (String.concat " " (List.map string_of_int (snd (List.split deg))));
   let rec aux lis update = match lis with
     | (n, d) :: xs when d < reg_sum ->
         Printf.printf "Remove %s\n" (string_of_reg n);
@@ -221,8 +254,11 @@ let pickup_freeze alloc =
   in
   if List.length lis = 0 then
     None
-  else
+  else begin
+    let r = List.hd lis in
+    Printf.printf "Freezed %s\n" (string_of_reg r);
     Some (List.hd lis)
+  end
 
 let rebuild_move_pair alloc =
   let should_remove a b = Graph.has_edge alloc.intrf_g a b in
@@ -247,12 +283,17 @@ let coalesce alloc =
 (* FIXME *)
 let pickup_spill alloc =
   let g = alloc.intrf_g in
-  (Graph.nodes g)
-  |> List.map (fun x -> (x, Graph.degree g x))
-  |> List.sort (fun x y -> (snd x) - (snd y))
-  |> List.rev
-  |> List.hd
-  |> fst
+  let r = 
+    (Graph.nodes g)
+    |> List.filter (fun x -> not (is_precolored alloc x)) 
+    |> List.map (fun x -> (x, Graph.degree g x))
+    |> List.sort (fun x y -> (snd x) - (snd y))
+    |> List.rev
+    |> List.hd
+    |> fst
+  in
+  Printf.printf "Potential spill %s\n" (string_of_reg r);
+  r
 
 let filter_move_pair f alloc =
   let mp = Hashtbl.copy alloc.move_pair in
@@ -275,17 +316,14 @@ let spill alloc =
 
 let remove_nodes alloc =
   let step () =
-    let update = simplify alloc in
-    let update = update || (coalesce alloc) in
-    if update then
+    if simplify alloc then
       ()
-    else begin
-      let update = freeze alloc in
-      if update then
-        ()
-      else
-        spill alloc
-    end
+    else if coalesce alloc then
+      ()
+    else if freeze alloc then
+      ()
+    else
+      spill alloc
   in
   while alloc.regs.reg_sum < Graph.length (alloc.intrf_g) do
     step ()
@@ -333,7 +371,7 @@ let assign_color mapping alloc n =
         |> List.filter (Hashtbl.mem mapping.coloring)
         |> List.map (Hashtbl.find mapping.coloring)
     in
-    Printf.printf "Adj : [ %s ]\n" (String.concat " " (List.map string_of_int succ));
+    Printf.printf "  Adj : [ %s ]\n" (String.concat " " (List.map string_of_int succ));
     let res = Hashtbl.create (List.length succ) in
     List.iter (fun c -> Hashtbl.replace res c ()) succ;
     res
@@ -365,7 +403,12 @@ let coloring alloc =
   while not (Stack.is_empty alloc.stack) do
     let n = restore_node alloc in
     let res = assign_color cm alloc n in
-    if res then () else Hashtbl.add spilled n ()
+    if res then
+      Printf.printf "%s was colored to %d\n" (string_of_reg n) (Hashtbl.find cm.coloring n)
+    else begin
+      Printf.printf "Actual spill %s\n" (string_of_reg n);
+      Hashtbl.add spilled n ()
+    end
   done;
   (cm, spilled)
 
@@ -474,8 +517,6 @@ let allocate_func_aux vec ltbl regs =
     init := false;
     remove_nodes new_alloc;
     let new_cm, new_spilled = coloring new_alloc in
-    print_endline ""; print_endline (dump_colormap new_cm);
-    print_endline ""; print_endline (dump_spilled new_spilled);
     let new_vec, new_ltbl = rewrite_proc !vec new_spilled in
     cm := Some new_cm;
     alloc := Some new_alloc;

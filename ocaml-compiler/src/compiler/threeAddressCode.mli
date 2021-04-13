@@ -24,3 +24,5 @@ val reset_id : labeled_instr Vector.t -> (labeled_instr Vector.t * label_table)
 val make_reg_set : (int * int * int) -> reg_set
 
 val sample_program : t
+
+val sample2 : t

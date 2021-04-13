@@ -5,7 +5,9 @@ type t
 
 val analyze : reg_set ->
               labeled_instr Vector.t ->
-              label_table -> t
+              label_table ->
+              (reg_type -> bool) ->
+              t
 
 val live_in : t -> int -> reg_table
 

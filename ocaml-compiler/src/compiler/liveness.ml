@@ -34,7 +34,7 @@ let make_cfg labeling vec =
   done;
   cfg
 
-let calc_use_def vec regs =
+let calc_use_def vec regs ignore =
   let len = Vector.length vec in
   let def = Vector.empty () in
   let use = Vector.empty () in
@@ -46,13 +46,16 @@ let calc_use_def vec regs =
   for i = 0 to len - 1 do
     Vector.push_back def (Hashtbl.create 2);
     Vector.push_back use (Hashtbl.create 2);
-    let update_def v = Hashtbl.replace (Vector.get def i) v () in
+    let update_def v =
+      if ignore v then () else Hashtbl.replace (Vector.get def i) v () 
+    in
     let update_use v = 
       let used = match v with
         | Reg r -> [ r ]
         | PrimCall (_, l) -> extract_regs l
         | _ -> []
       in
+      let used = List.filter (fun x -> not (ignore x)) used in
       let aux r = Hashtbl.replace (Vector.get use i) r () in
       List.iter aux used
     in
@@ -110,7 +113,7 @@ let calc_liveness use def cfg instr_vec regs =
   loop ();
   (in_set, out_set)
 
-let analyze regs instr_vec ptbl =
+let analyze regs instr_vec ptbl ignore =
   let instr_vec =
     instr_vec 
     |> Vector.list_of_vector
@@ -119,7 +122,7 @@ let analyze regs instr_vec ptbl =
     |> Vector.vector_of_list
   in
   let cfg = make_cfg ptbl instr_vec in
-  let use, def = calc_use_def instr_vec regs in
+  let use, def = calc_use_def instr_vec regs ignore in
   let in_set, out_set = calc_liveness use def cfg instr_vec regs in
   { regs; in_set; out_set; instr_vec; use; def; cfg; }
 

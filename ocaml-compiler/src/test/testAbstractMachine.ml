@@ -8,7 +8,7 @@ let print_program machine =
 let () =
   print_label "Abstract Machine";
   let machine =
-    source3 |> Ast.make_ast
+    source2 |> Ast.make_ast
             |> Ast.normalize
             |> Cps.cps_trans
             |> AdmBetaReduction.normalize

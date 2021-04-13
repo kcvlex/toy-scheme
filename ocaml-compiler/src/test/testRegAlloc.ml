@@ -70,11 +70,6 @@ let rfill c n s =
   let suffix = repeat c remain in
   s ^ suffix
 
-let make_rptbl ptbl =
-  let tbl = Hashtbl.create (Hashtbl.length ptbl) in
-  Hashtbl.iter (fun x y -> Hashtbl.add tbl y x) ptbl;
-  tbl
-
 let string_of_label label = 
   let label = match label with
     | Some l -> l ^ ":"
@@ -88,8 +83,8 @@ let string_of_proc seq =
       |> List.map (fun (x, y) -> y ^ x)
 
 let () =
-  let reg_num = (1, 2, 0) in
-  let sample = ThreeAddressCode.sample_program in
+  let reg_num = (0, 1, 2) in
+  let sample = ThreeAddressCode.sample2 in
   let allocated = RegAlloc.allocate_experiment reg_num sample in
   let seq = allocated.seq in
   let lis = string_of_proc seq in

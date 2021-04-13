@@ -425,3 +425,27 @@ let sample_program =
   let seq = Vector.vector_of_list seq in
   let seq, ltbl = reset_id seq in
   { signature = Hashtbl.create 0; ltbl; seq; }
+
+let sample2 =
+  let a = Virtual 0 in
+  let b = Virtual 1 in
+  let c = Virtual 2 in
+  let d = Virtual 3 in
+  let e = Virtual 4 in
+  let r1 = Argument 0 in
+  let r2 = Argument 1 in
+  let r3 = CalleeSaved 0 in
+  let seq = [
+    (Move   (a, r1,                                               0), Some "entry");
+    (Move   (b, r2,                                               1), None);
+    (Bind   (d, Int 0,                                            2), None);
+    (Move   (e, a,                                                3), None);
+    (Bind   (d, PrimCall (ADD, [ Reg d; Reg b ]),                 4), Some "loop");
+    (Bind   (e, PrimCall (SUB, [ Reg e; Int 1 ]),                 5), None);
+    (Test   (PrimCall (LESS, [ Int 0; Reg e ]), JumpLabel "loop", 6), None);
+    (Move   (rv_reg, d,                                           7), None);
+    (Return (                                                     8), None)
+  ]
+  in
+  let seq, ltbl = seq |> Vector.vector_of_list |> reset_id in
+  { signature = Hashtbl.create 0; ltbl; seq }

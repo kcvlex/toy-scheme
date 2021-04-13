@@ -16,18 +16,24 @@ val represent : 'a t -> 'a -> 'a
 
 val group : 'a t -> 'a -> 'a list
 
+val length : 'a t -> int
+
+val all_length : 'a t -> int
+
 (* representative of each group *)
 val nodes : 'a t -> 'a list
+
+val all_nodes : 'a t -> 'a list
 
 val succ : 'a t -> 'a -> 'a list
 
 val pred : 'a t -> 'a -> 'a list
 
+val copy : 'a t -> 'a t
+
 val has_edge : 'a t -> 'a -> 'a -> bool
 
 val degree : 'a t -> 'a -> int
-
-val length : 'a t -> int
 
 val is_same_group : 'a t -> 'a -> 'a -> bool
 

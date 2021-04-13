@@ -2,7 +2,6 @@ type 'a node_set = ('a, unit) Hashtbl.t
 type 'a edges_type = ('a, 'a node_set) Hashtbl.t
 type 'a t = {
   directed : bool;
-  mutable len : int;
   belong : ('a, 'a) Hashtbl.t;
   group : ('a, 'a node_set) Hashtbl.t;
   edges : 'a edges_type;
@@ -16,7 +15,6 @@ let list_of_tblval tbl = Hashtbl.fold (fun _ x y -> x :: y) tbl []
 let make d = 
   {
     directed = d;
-    len = 0;
     group = Hashtbl.create 2;
     belong = Hashtbl.create 2;
     edges = Hashtbl.create 2;
@@ -28,7 +26,6 @@ let node_preprocess g a =
     ()
   else begin
     let tbl = Hashtbl.create 1 in
-    g.len <- g.len + 1;
     Hashtbl.add g.belong a a;
     Hashtbl.add tbl a ();
     Hashtbl.add g.group a tbl;
@@ -78,7 +75,6 @@ let rm_node g a =
   let a = represent g a in
   let lis = list_of_tblkey (Hashtbl.find g.edges a) in
   let grp = list_of_tblkey (Hashtbl.find g.group a) in
-  g.len <- g.len - 1;
   List.iter (rm_edge g a) lis;
   Hashtbl.remove g.edges a;
   Hashtbl.remove g.redges a;
@@ -93,9 +89,13 @@ let pred g a =
   let a = represent g a in
   list_of_tblkey (Hashtbl.find g.redges a)
 
-let length g = g.len
+let length g = Hashtbl.length g.group
+
+let all_length g = Hashtbl.length g.belong
 
 let nodes g = list_of_tblkey g.group
+
+let all_nodes g = list_of_tblkey g.belong
 
 let degree g a =
   let a = represent g a in
@@ -125,7 +125,6 @@ let contract_aux g a b =
   let neig = list_of_tblkey (Hashtbl.find g.edges b) in
   let grp = list_of_tblkey (Hashtbl.find g.group b) in
   rm_node g b;
-  g.len <- g.len - 1;
   List.iter (fun x -> Hashtbl.replace g.belong x a) grp;
   List.iter (fun x -> Hashtbl.replace (Hashtbl.find g.group a) x ()) grp;
   List.iter (add_edge g a) neig;
@@ -154,6 +153,19 @@ let group g a =
   let a = represent g a in
   let tbl = Hashtbl.find g.group a in
   Hashtbl.fold (fun x _ l -> x :: l) tbl []
+
+let copy_edges edges =
+  let res = Hashtbl.create (Hashtbl.length edges) in
+  Hashtbl.iter (fun x y -> Hashtbl.add res x (Hashtbl.copy y)) edges;
+  res
+
+let copy g =
+  let directed = g.directed in
+  let belong = Hashtbl.copy g.belong in
+  let group = Hashtbl.copy g.group in
+  let edges = copy_edges g.edges in
+  let redges = copy_edges g.redges in
+  { directed; belong; group; edges; redges }
 
 let dump g f =
   let fn seq = 
