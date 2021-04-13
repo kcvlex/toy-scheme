@@ -97,13 +97,11 @@ let () =
   in
   let make_int i = AbstractMachineType.Int i in
   let entry = AbstractMachine.call_and_print "entry" "f" [ make_int 42; make_int 42 ] in
-  let regs = List.map Regs.string_of_reg (Regs.make_reg_set reg_num).all_regs in
   let machine =
     allocated
     |> ThreeAddressCode.to_abs_program
     |> AbstractMachine.link entry
     |> AbstractMachine.make_machine
   in
-  List.iter (fun x -> AbstractMachine.add_glob machine x None) regs;
   print_machine machine;
   AbstractMachine.eval machine

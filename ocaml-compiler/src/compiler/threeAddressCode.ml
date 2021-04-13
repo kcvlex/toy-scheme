@@ -182,7 +182,7 @@ let rec from_abs_value var2vreg vec value =
   match value with
     | AbstractMachineType.Int i -> Int i
     | AbstractMachineType.Bool b -> Bool b
-    | AbstractMachineType.Ref s -> Reg (get_vreg var2vreg s)
+    | AbstractMachineType.Ref s -> Reg (get_vreg var2vreg (AbstractMachine.string_of_ref s))
     | AbstractMachineType.Nil -> Nil
     | AbstractMachineType.Primitive p -> Primitive p
     | AbstractMachineType.PrimCall (p, vl) ->
@@ -200,7 +200,7 @@ let rec from_abs_value var2vreg vec value =
         Reg rv_reg
     | AbstractMachineType.AccessClosure (s, il) ->
         let r = SlotNumber.fresh vreg_slot in
-        Vector.push_back vec (Move (r, (get_vreg var2vreg s), -1), None);
+        Vector.push_back vec (Move (r, get_vreg var2vreg s, -1), None);
         let rec aux il = match il with
           | i :: xs -> Vector.push_back vec (Load (r, Reg r, i, -1), None); aux xs
           | [] -> r
@@ -214,7 +214,7 @@ let rec from_abs_proc var2vreg vec proc =
     | hd :: tl -> (match hd with
       | AbstractMachineType.Bind (s, v) ->
           let v = recv v in
-          let s = get_vreg var2vreg s in
+          let s = get_vreg var2vreg (AbstractMachine.string_of_ref s) in
           Vector.push_back vec (make_assign s v, None);
           recf tl
       | AbstractMachineType.Test (p, e1, e2) ->
@@ -273,6 +273,7 @@ let from_abs_func (c, args, oarg, body) =
     let tbl = Hashtbl.create 8 in
     let args = if Option.is_some c then (Option.get c) :: args else args in
     let args = if Option.is_some oarg then List.append args [ Option.get oarg ] else args in
+    let args = List.map AbstractMachine.string_of_ref args in
     let rec assign_args lis i = match lis with
       | x :: xs -> 
           let reg = get_vreg tbl x in
@@ -312,8 +313,10 @@ let insert_jump lv =
 let abs_rv = AbstractMachineType.RV
 
 let trans_reg r = match r with
-  | Virtual x when x <= (-2) -> Printf.sprintf "__mem_%d" x
-  | _ -> string_of_reg r
+  | Virtual x when x <= (-2) -> AbstractMachineType.Local (Printf.sprintf "__mem_%d" x)
+  | Virtual _ -> AbstractMachineType.Local (string_of_reg r)
+  | Argument 0 -> AbstractMachineType.RV
+  | _ -> AbstractMachineType.Global (string_of_reg r)
 
 let rec abs_of_value value = match value with
   | Int i -> AbstractMachineType.Int i
@@ -334,7 +337,7 @@ let rec abs_of_block b = match b with
       let res = match xs with
         | [] -> AbstractMachineType.Test (p, [ jt ], [])
         | (Return _) :: [] -> 
-            AbstractMachineType.Test (p, [ jt ], [ AbstractMachineType.Return abs_rv ])
+            AbstractMachineType.Test (p, [ jt ], [ AbstractMachineType.Return (Ref abs_rv) ])
         | (Jump (jf, _)) :: [] ->
             let jf = AbstractMachineType.Jump (abs_of_value jf) in
             AbstractMachineType.Test (p, [ jt ], [ jf ])
@@ -349,7 +352,7 @@ let rec abs_of_block b = match b with
             let src = trans_reg src in
             AbstractMachineType.Bind (dst, AbstractMachineType.Ref src)
         | Jump (v, _) -> AbstractMachineType.Jump (abs_of_value v)
-        | Return _ -> AbstractMachineType.Return abs_rv
+        | Return _ -> AbstractMachineType.Return (Ref abs_rv)
         | Load (dst, v, offset, _) ->
             assert (offset = 0);    (* FIXME *)
             let dst = trans_reg dst in
@@ -380,9 +383,13 @@ let reformat_sig (clarg, args, earg) =
   let i = ref 0 in
   let assign _ =
     let c = !i in
-    incr i; 
-    let r = Argument c in
-    string_of_reg r
+    incr i;
+    if c = 0 then
+      AbstractMachineType.RV
+    else begin
+      let r = Argument c in
+      AbstractMachineType.Global (string_of_reg r)
+    end
   in
   let rec aux args = match args with
     | x :: xs ->

@@ -12,12 +12,12 @@ type frame_type = {
 type t = {
   frames : frame_type Stack.t;
   globs : vstore;
-  mutable ra : data_type;
   funcs : func_table;
   jumps : jump_table;
 }
 
 let entry_label = "entry"
+let rv_sym = "__RV"
 
 let rec translate_proc labels clo = match clo with
   | ClosureType.Term t ->
@@ -28,7 +28,7 @@ let rec translate_proc labels clo = match clo with
         | (s, t) :: xs ->
             let v, vl = translate_value labels t in
             let xs = aux xs in
-            List.flatten [ vl; [ Bind (s, v) ]; xs ]
+            List.flatten [ vl; [ Bind (Local s, v) ]; xs ]
         | [] -> []
       in
       let lis = aux lis in
@@ -54,7 +54,7 @@ and translate_value labels value = match value with
       let lis = List.append fl al in
       (match f with
         | Primitive p when p != APPLY -> (PrimCall (p, a), lis)
-        | _ -> (RV, List.append lis [ Call (f, a) ]))
+        | _ -> (Ref RV, List.append lis [ Call (f, a) ]))
   | ClosureType.Closure (s, l) ->
       let a, al =
         let l = List.map (translate_value labels) l in
@@ -62,11 +62,11 @@ and translate_value labels value = match value with
         (b, List.flatten bl)
       in
       assert (List.length al = 0);
-      (Cons (Ref s, Allocate a), [])
+      (Cons (Ref (Local s), Allocate a), [])
   | ClosureType.Var "DUMMY" -> (Nil, [])
   | ClosureType.Var s ->
       let s = 
-        if Hashtbl.mem labels s then Label s else Ref s
+        if Hashtbl.mem labels s then Label s else Ref (Local s)
       in
       (s, [])
   | ClosureType.Nil -> (Nil, [])
@@ -77,10 +77,6 @@ and translate_closure c il = match c with
   | ClosureType.ClosureRef (cn, i) -> translate_closure cn (i :: il)
   | ClosureType.Var s -> AccessClosure (s, il)
   | _ -> raise (Invalid_argument "AAA")
-
-let add_glob machine name vopt = match vopt with
-  | Some v -> Hashtbl.add machine.globs name v
-  | None -> Hashtbl.add machine.globs name (DInt 0)
 
 let make_machine (funcs, jumps) =
   let frame = {
@@ -93,7 +89,6 @@ let make_machine (funcs, jumps) =
   {
     frames;
     globs = Hashtbl.create 0;
-    ra = DNil;
     funcs;
     jumps;
   }
@@ -106,11 +101,22 @@ let translate (clsr_prog: ClosureType.t) =
     List.iter (fun x -> Hashtbl.add tbl x ()) (entry_label :: names); tbl
   in
   let funcs, jumps =
+    let format_args c l opt =
+      let c = Local c in
+      let l = List.map (fun x -> Local x) l in
+      let opt = Option.map (fun x -> Local x) opt in
+      (Some c, l, opt)
+    in
+    let format_proc (c, l, opt, body) =
+      let c, l, opt = format_args c l opt in
+      let proc = translate_proc labels body in
+      (c, l, opt, proc)
+    in
     let tp =
       clsr_prog.procs
       |> List.split
       |> snd
-      |> List.map (fun (c, l, opt, body) -> (Some c, l, opt, translate_proc labels body))
+      |> List.map format_proc
     in
     let funcs =
       let tbl = Hashtbl.create sz in
@@ -188,6 +194,11 @@ let make_instr_str indent label lis =
   lis |> String.concat ", "
       |> Printf.sprintf "%s%s (%s)" indent label
 
+let string_of_ref r = match r with
+  | Global s -> s
+  | Local s -> s
+  | RV -> rv_sym
+
 let rec string_of_value value = match value with
   | Int i -> string_of_int i
   | Bool true -> "#t"
@@ -198,9 +209,8 @@ let rec string_of_value value = match value with
       let vl = List.map string_of_value vl in
       (p :: vl) |> String.concat " " |> Printf.sprintf "(%s)"
   | Label s -> Printf.sprintf "LABEL (%s)" s
-  | Ref s -> s
+  | Ref r -> string_of_ref r
   | Allocate lis -> make_instr_str "" "ALLOCATE" (List.map string_of_value lis)
-  | RV -> "RV"
   | Nil -> "nil"
   | Quote a -> Printf.sprintf "QUOTE (%s)" (Ast.code_of_ast a)
   | Cons (car, cdr) -> make_instr_str "" "CONS" (List.map string_of_value [ car; cdr ])
@@ -210,7 +220,7 @@ let rec string_of_value value = match value with
          |> make_instr_str "" "ACCESS"
 
 let rec string_of_instr indent instr = match instr with
-  | Bind (s, v) -> make_instr_str indent "BIND" [ s; string_of_value v ]
+  | Bind (s, v) -> make_instr_str indent "BIND" [ string_of_ref s; string_of_value v ]
   | Test (p, e1, e2) ->
       let p = string_of_value p in
       let nindent = "  " ^ indent in
@@ -304,9 +314,9 @@ let rec eval_call machine f args = match f with
       let f, args = restrict_2arg args in
       let args = list_of_dcons args in
       eval_call machine f args
-  | DPrim p ->
+  | DPrim p -> 
       let v = call_prim p args in
-      machine.ra <- v
+      Hashtbl.replace machine.globs rv_sym v
   | DLabel f ->
       let (cl, cargs, earg, body) = Hashtbl.find machine.funcs f in
       let cargs = match cl with
@@ -316,11 +326,10 @@ let rec eval_call machine f args = match f with
       let mem = Hashtbl.create (List.length cargs) in
       let rec aux clis alis = match (clis, alis) with
         | (x :: xs, y :: ys) ->
-            let () =
-              if x = "ARG_0" then
-                machine.ra <- y
-              else
-                Hashtbl.replace machine.globs x y
+            let () = match x with
+              | Global s -> Hashtbl.replace machine.globs s y
+              | Local s -> Hashtbl.replace mem s y
+              | RV -> Hashtbl.replace machine.globs rv_sym y
             in
             aux xs ys
         | ([], ys) -> ys
@@ -328,9 +337,9 @@ let rec eval_call machine f args = match f with
       in
       let rem = aux cargs args in
       let () = match (earg, rem) with
-        | (Some c, _) -> Hashtbl.replace mem c (dcons_of_list rem)
+        | (Some (Local c), _) -> Hashtbl.replace mem c (dcons_of_list rem)
         | (None, []) -> ()
-        | _ -> print_endline f; print_endline (String.concat "\n" (List.map string_of_data rem)); raise (Invalid_argument "eval_call_frame2")
+        | _ -> raise (Invalid_argument "eval_call_frame2")
       in
       let frame = { mem; cur = body } in
       Stack.push frame machine.frames
@@ -348,19 +357,25 @@ let rec eval_value machine mem v = match v with
       let args = List.map (eval_value machine mem) args in
       let v = call_prim p args in
       v
-  | Ref s ->
-      if s = "ARG_0" then
-        machine.ra
-      else if Hashtbl.mem machine.funcs s then
+  | Ref (Global s) ->
+      (* FIXME *)
+      if Hashtbl.mem machine.funcs s then
         DLabel s
       else if Hashtbl.mem machine.jumps s then
         DLabel s
       else if Hashtbl.mem machine.globs s then
-        Hashtbl.find machine.globs s
-      else
+        Hashtbl.find machine.globs s 
+      else 
+        DNil
+  | Ref (Local s) -> 
+      if Hashtbl.mem machine.funcs s then
+        DLabel s
+      else if Hashtbl.mem machine.jumps s then
+        DLabel s
+      else 
         Hashtbl.find mem s
+  | Ref RV -> if Hashtbl.mem machine.globs rv_sym then Hashtbl.find machine.globs rv_sym else DNil
   | Allocate l -> DList (List.map (eval_value machine mem) l)
-  | RV -> machine.ra
   | Cons (car, cdr) ->
       let car = eval_value machine mem car in
       let cdr = eval_value machine mem cdr in
@@ -376,17 +391,10 @@ let eval_step machine =
     | hd :: tl -> match hd with
       | Bind (s, v) ->
           let v = eval_value machine mem v in
-          let () =
-            if s = "ARG_0" then
-              machine.ra <- v
-            else begin
-              let glob = Hashtbl.mem machine.globs s in
-              let local = Hashtbl.mem mem s in
-              if (not local) && glob then
-                Hashtbl.replace machine.globs s v
-              else
-                Hashtbl.replace mem s v
-            end
+          let () = match s with
+            | Global s -> Hashtbl.replace machine.globs s v
+            | Local s -> Hashtbl.replace mem s v
+            | RV -> Hashtbl.replace machine.globs rv_sym v
           in
           Stack.push { mem; cur = tl } machine.frames
       | Test (p, e1, e2) -> (match tl with
@@ -400,10 +408,9 @@ let eval_step machine =
         | _ -> raise (Invalid_argument "Test"))
       | Return v ->
           let v = eval_value machine mem v in
-          machine.ra <- v;
+          Hashtbl.replace machine.globs rv_sym v
       | Jump v ->
           let v = eval_value machine mem v in
-          print_endline (String.concat " " (Hashtbl.fold (fun x y l -> (Printf.sprintf "(%s = %s)" x (string_of_data y)) :: l) machine.globs []));
           (match v with
             | DLabel s ->
                 let body = Hashtbl.find machine.jumps s in
@@ -442,7 +449,7 @@ let link p1 p2 =
 
 let call_and_print name f args =
   let call = Call (Label f, args) in
-  let display = Call (Primitive DISPLAY, [ RV ]) in
+  let display = Call (Primitive DISPLAY, [ Ref RV ]) in
   let seq = [ call; display; Return (Int 0) ] in
   let ftbl = Hashtbl.create 1 in
   Hashtbl.add ftbl name (None, [], None, seq);
