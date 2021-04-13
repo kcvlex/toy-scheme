@@ -3,12 +3,12 @@ open TestUtil
 open Compiler
 
 let vreg2str vr = match vr with
-  | ThreeAddressCodeType.Virtual i -> string_of_int i
+  | RegsType.Virtual i -> string_of_int i
   | _ -> raise (Invalid_argument "Unkonwn register")
 
 let validate_regset rset lis =
   let string_of_rlis l =
-    String.concat " " (List.map ThreeAddressCode.string_of_reg l)
+    String.concat " " (List.map Regs.string_of_reg l)
   in
   let s1 = Hashtbl.fold (fun x _ l -> x :: l) rset [] in
   let s1 = string_of_rlis s1 in
@@ -20,15 +20,15 @@ let validate_regset rset lis =
     List.fold_left (fun x y -> x && (Hashtbl.mem rset y)) true lis
 
 let () =
-  let sample = ThreeAddressCode.sample_program in
+  let sample = ThreeAddressCode.sample1 in
   let ltbl = sample.ltbl in
   let seq = sample.seq in
-  let regs = ThreeAddressCode.make_reg_set (1, 1, 1) in
+  let regs = Regs.make_reg_set (1, 1, 1) in
   let liveness = Liveness.analyze regs seq ltbl (fun _ -> false) in
-  let vr i = ThreeAddressCodeType.Virtual i in
-  let cer i = ThreeAddressCodeType.CallerSaved i in
-  let cee i = ThreeAddressCodeType.CalleeSaved i in
-  let rv = ThreeAddressCodeType.Argument 0 in
+  let vr i = RegsType.Virtual i in
+  let cer i = RegsType.CallerSaved i in
+  let cee i = RegsType.CalleeSaved i in
+  let rv = RegsType.Argument 0 in
   let correct = [
     ([ vr 2; cee 0 ],       [ vr  0; vr 2; cee 0 ]);
     ([ vr 0; vr 2; cee 0 ], [ vr  1; vr 2; cee 0 ]);

@@ -9,6 +9,7 @@
                                   astType
                                   cpsType
                                   closureType
+                                  regsType
                                   abstractMachineType
                                   threeAddressCodeType
                                   riscvInstr

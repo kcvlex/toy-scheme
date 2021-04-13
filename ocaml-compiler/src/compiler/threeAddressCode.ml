@@ -1,6 +1,8 @@
 open SymbolType
 open Symbol
 open Util
+open RegsType
+open Regs
 open ThreeAddressCodeType
 
 let vreg_slot = SlotNumber.make (fun x -> Virtual x)
@@ -8,18 +10,7 @@ let br_label_slot = SlotNumber.make (fun x -> "__LABEL_br_" ^ (string_of_int x))
 
 let allocate_label = "allocate"
 
-let make_reg_set reg_num =
-  let caller_saved, callee_saved, args = reg_num in
-  let rec aux i n cnstr =
-    if i = n then [] else (cnstr i) :: (aux (i + 1) n cnstr)
-  in
-  let caller_saved_regs = aux 0 caller_saved (fun x -> CallerSaved x) in
-  let callee_saved_regs = aux 0 callee_saved (fun x -> CalleeSaved x) in
-  let argument_regs = aux 0 args (fun x -> Argument x) in
-  let all_regs = List.flatten [ caller_saved_regs; callee_saved_regs; argument_regs ] in
-  let reg_sum = List.length all_regs in
-  { caller_saved_regs; callee_saved_regs; argument_regs; all_regs; reg_sum; }
-
+(******************** Utils ********************)
 let get_vreg var2vreg name =
   if Hashtbl.mem var2vreg name then
     Hashtbl.find var2vreg name
@@ -73,21 +64,51 @@ let reset_id seq =
   in
   aux 0
 
-(*
-let split_by_labels lis =
-  let ret = Vector.empty () in
-  let rec aux lis cur = match lis with
-    | (i, Some l) :: xs ->
-        let cur = i :: cur in
-        let v = Vector.vector_of_list cur in
-        Vector.push_back ret (l, v);
-        aux xs []
-    | x :: xs -> aux xs (x :: cur)
-    | [] -> ()
-  in
-  aux (List.rev lis);
-  ret
-*)
+
+
+(******************** Dump ********************)
+
+let rec string_of_value value = match value with
+  | Int i -> string_of_int i
+  | Bool true -> "true"
+  | Bool false -> "false"
+  | Reg r -> string_of_reg r
+  | Nil -> "null"
+  | FuncLabel s -> s ^ " (function)"
+  | JumpLabel s -> s ^ " (jump)"
+  | Primitive p -> string_of_sym (PrimitiveSym p)
+  | Quote a -> "`" ^ (Ast.code_of_ast a)
+  | PrimCall (p, l) ->
+      let p = string_of_sym (PrimitiveSym p) in
+      let l = 
+        l |> List.map string_of_value
+          |> String.concat " "
+      in
+      Printf.sprintf "(%s %s)" p l
+
+let string_of_instr instr = match instr with
+  | Bind (a, b, _) ->
+      let a = string_of_reg a in
+      let b = string_of_value b in
+      Printf.sprintf "%s <- %s (bind)" a b
+  | Move (a, b, _) ->
+      let a = string_of_reg a in
+      let b = string_of_reg b in
+      Printf.sprintf "%s <- %s (move)" a b
+  | Test (a, b, _) ->
+      let a = string_of_value a in
+      let b = string_of_value b in
+      Printf.sprintf "if %s then %s" a b
+  | Jump (a, _) -> Printf.sprintf "jump %s" (string_of_value a)
+  | Return _ -> "return"
+  | Load (a, b, c, _) ->
+      let a = string_of_reg a in
+      let b = string_of_value b in
+      Printf.sprintf "%s <- %d(%s)" a c b
+  | Store (a, b, c, _) ->
+      let a = string_of_reg a in
+      let b = string_of_value b in
+      Printf.sprintf "%d(%s) <- %s" c a b
 
 
 (******************** Trans AbstractMachineCode to ThreeAddressCode ********************)
@@ -162,7 +183,6 @@ let rec from_abs_value var2vreg vec value =
     | AbstractMachineType.Int i -> Int i
     | AbstractMachineType.Bool b -> Bool b
     | AbstractMachineType.Ref s -> Reg (get_vreg var2vreg s)
-    | AbstractMachineType.RV -> Reg rv_reg
     | AbstractMachineType.Nil -> Nil
     | AbstractMachineType.Primitive p -> Primitive p
     | AbstractMachineType.PrimCall (p, vl) ->
@@ -267,7 +287,6 @@ let from_abs_func (c, args, oarg, body) =
   reset_id vec
 
 
-(*
 (******************** Trans ThreeAddressCode to AbstractMachineCode ********************)
 let insert_jump lv =
   let rec aux lis = match lis with
@@ -280,8 +299,8 @@ let insert_jump lv =
         let xs = aux xs in
         (i1, l1) :: (Jump (JumpLabel l2, -1), None) :: xs
     | ((i1, _) as e1) :: ((i2, Some l2) as e2) :: xs -> (match i1 with    (* i1 isn't Test *)
-      | Return _ | Jump _ -> e1 :: (aux (e2 :: x2))
-      | _ -> e1 :: (Jump (JumpLabel l2, -1), None) :: (aux (e1 :: xs)))
+      | Return _ | Jump _ -> e1 :: (aux (e2 :: xs))
+      | _ -> e1 :: (Jump (JumpLabel l2, -1), None) :: (aux (e2 :: xs)))
     | x :: xs -> x :: (aux xs)
     | [] -> []
   in
@@ -292,123 +311,122 @@ let insert_jump lv =
 
 let abs_rv = AbstractMachineType.RV
 
-let abs_of_value value = match value with
+let trans_reg r = match r with
+  | Virtual x when x <= (-2) -> Printf.sprintf "__mem_%d" x
+  | _ -> string_of_reg r
+
+let rec abs_of_value value = match value with
   | Int i -> AbstractMachineType.Int i
   | Bool b -> AbstractMachineType.Bool b
-  | Reg r -> AbstractMachineType.Ref (string_of_reg r)
+  | Reg r -> AbstractMachineType.Ref (trans_reg r)
   | Nil -> AbstractMachineType.Nil
+  | PrimCall (p, vl) -> AbstractMachineType.PrimCall (p, List.map abs_of_value vl)
+  | Primitive p -> AbstractMachineType.Primitive p
   | FuncLabel l -> AbstractMachineType.Label l
   | JumpLabel l -> AbstractMachineType.Label l
-  | Primitive p -> AbstractMachineType.Primitive p
   | Quote a -> AbstractMachineType.Quote a
-
-let trans_memreg reg offset = match reg with
-  | AbstractMachineType.Reg (Virtual x) when x <= (-2) -> 
-      AbstractMachineType.Var (Printf.sprintf "__mem_%d" x)
-  | _ -> 
-      let s = AbstractMachineType.Ref (string_of_reg reg) in
-      AbstractMachineType.AccessClosure (s, [ offset ])
 
 let rec abs_of_block b = match b with
   | Test (p, v1, _) :: xs ->
       let p = abs_of_value p in
       let v1 = abs_of_value v1 in
       let jt = AbstractMachineType.Jump v1 in
-      (match xs with
+      let res = match xs with
         | [] -> AbstractMachineType.Test (p, [ jt ], [])
         | (Return _) :: [] -> 
             AbstractMachineType.Test (p, [ jt ], [ AbstractMachineType.Return abs_rv ])
-        | (Jump jf) :: [] ->
+        | (Jump (jf, _)) :: [] ->
             let jf = AbstractMachineType.Jump (abs_of_value jf) in
             AbstractMachineType.Test (p, [ jt ], [ jf ])
-        | _ -> raise (Invalid_argument "Test"))
+        | _ -> raise (Invalid_argument "Test")
+      in
+      [ res ]
   | x :: xs -> 
       let x = match x with
-        | Bind (r, v, _) -> AbstractMachineType.Bind (string_of_reg r, abs_of_value v)
+        | Bind (r, v, _) -> AbstractMachineType.Bind (trans_reg r, abs_of_value v)
         | Move (dst, src, _) ->
-            let dst = string_of_reg dst in
-            let src = AbstractMachineType.Var (string_of_reg src) in
-            AbstractMachineType.Bind (dst, src)
+            let dst = trans_reg dst in
+            let src = trans_reg src in
+            AbstractMachineType.Bind (dst, AbstractMachineType.Ref src)
         | Jump (v, _) -> AbstractMachineType.Jump (abs_of_value v)
         | Return _ -> AbstractMachineType.Return abs_rv
-        | Load (dst, mem, offset, _) ->
-            let mem = abs_of_value mem in
-            let mem = trans_memreg mem offset in
-            AbstreactMachine.Bind (dst, mem)
-        | Store (src, mem, offset, _) ->
-            let mem = abs_of_value mem in
-            let mem = trans_memreg mem offset in
-            AbstractMachine.Bind (src, mem)
-        | Test _ -> raise (Invalid_arguemnt "UNREACHABLE")
+        | Load (dst, v, offset, _) ->
+            assert (offset = 0);    (* FIXME *)
+            let dst = trans_reg dst in
+            let src = abs_of_value v in
+            AbstractMachineType.Bind (dst, src)
+        | Store (dst, v, offset, _) ->
+            assert (offset = 0);    (* FIXME *)
+            let dst = trans_reg dst in
+            let src = abs_of_value v in
+            AbstractMachineType.Bind (dst, src)
+        | Test _ -> raise (Invalid_argument "UNREACHABLE")
       in
       let xs = abs_of_block xs in
       x :: xs
   | [] -> []
 
+let split_by_labels lis =
+  let rec aux lis cur res = match lis with
+    | (i, Some l) :: xs ->
+        let cur = i :: cur in
+        aux xs [] ((l, cur) :: res)
+    | (i, _) :: xs -> aux xs (i :: cur) res
+    | [] -> res
+  in
+  aux (List.rev lis) [] []
+
+let reformat_sig (clarg, args, earg) =
+  let i = ref 0 in
+  let assign _ =
+    let c = !i in
+    incr i; 
+    let r = Argument c in
+    string_of_reg r
+  in
+  let rec aux args = match args with
+    | x :: xs ->
+        let x = assign x in
+        let xs = aux xs in
+        x :: xs
+    | [] -> []
+  in
+  let clarg = Option.map assign clarg in
+  let args = aux args in
+  let earg = Option.map assign earg in
+  (clarg, args, earg)
+
 let to_abs_program program =
-  let 
-  let { signature; label_tbl; seq } = program in
-*)
-
-
-(******************** Dump ********************)
-let string_of_reg r = match r with
-  | CallerSaved i -> Printf.sprintf "CER_%d" i
-  | CalleeSaved i -> Printf.sprintf "CEE_%d" i
-  | Argument i -> Printf.sprintf "ARG_%d" i
-  | Virtual i -> Printf.sprintf "VTR_%d" i
-
-let rec string_of_value value = match value with
-  | Int i -> string_of_int i
-  | Bool true -> "true"
-  | Bool false -> "false"
-  | Reg r -> string_of_reg r
-  | Nil -> "null"
-  | FuncLabel s -> s ^ " (function)"
-  | JumpLabel s -> s ^ " (jump)"
-  | Primitive p -> string_of_sym (PrimitiveSym p)
-  | Quote a -> "`" ^ (Ast.code_of_ast a)
-  | PrimCall (p, l) ->
-      let p = string_of_sym (PrimitiveSym p) in
-      let l = 
-        l |> List.map string_of_value
-          |> String.concat " "
-      in
-      Printf.sprintf "(%s %s)" p l
-
-let string_of_instr instr = match instr with
-  | Bind (a, b, _) ->
-      let a = string_of_reg a in
-      let b = string_of_value b in
-      Printf.sprintf "%s <- %s (bind)" a b
-  | Move (a, b, _) ->
-      let a = string_of_reg a in
-      let b = string_of_reg b in
-      Printf.sprintf "%s <- %s (move)" a b
-  | Test (a, b, _) ->
-      let a = string_of_value a in
-      let b = string_of_value b in
-      Printf.sprintf "if %s then %s" a b
-  | Jump (a, _) -> Printf.sprintf "jump %s" (string_of_value a)
-  | Return _ -> "return"
-  | Load (a, b, c, _) ->
-      let a = string_of_reg a in
-      let b = string_of_value b in
-      Printf.sprintf "%s <- %d(%s)" a c b
-  | Store (a, b, c, _) ->
-      let a = string_of_reg a in
-      let b = string_of_value b in
-      Printf.sprintf "%d(%s) <- %s" c a b
-
-let string_of_regtbl rs =
-  (Hashtbl.fold (fun x _ l -> x :: l) rs [])
-  |> List.map string_of_reg
-  |> String.concat " "
-  |> Printf.sprintf "[ %s ]"
+  let { signature; ltbl = _; seq } = program in
+  let signature =
+    let tbl = Hashtbl.create (Hashtbl.length signature) in
+    Hashtbl.iter (fun x y -> Hashtbl.add tbl x (reformat_sig y)) signature;
+    tbl
+  in
+  let transed =
+    seq 
+    |> insert_jump
+    |> fst
+    |> Vector.list_of_vector
+    |> split_by_labels
+    |> List.map (fun (x, y) -> (x, abs_of_block y))
+  in
+  let func_table = Hashtbl.create (Hashtbl.length signature) in
+  let jump_table = Hashtbl.create ((List.length transed) - (Hashtbl.length signature)) in
+  let update (l, p) =
+    if Hashtbl.mem signature l then begin
+      let a, b, c = Hashtbl.find signature l in
+      Hashtbl.add func_table l (a, b, c, p)
+    end else begin
+      Hashtbl.add jump_table l p
+    end
+  in
+  List.iter update transed;
+  (func_table, jump_table)
 
 
 (******************** Sample ********************)
-let sample_program =
+let sample1 =
   let a = Virtual 0 in
   let b = Virtual 1 in
   let c = Virtual 2 in
@@ -436,7 +454,7 @@ let sample2 =
   let r2 = Argument 1 in
   let r3 = CalleeSaved 0 in
   let seq = [
-    (Move   (a, r1,                                               0), Some "entry");
+    (Move   (a, r1,                                               0), Some "f");
     (Move   (b, r2,                                               1), None);
     (Bind   (d, Int 0,                                            2), None);
     (Move   (e, a,                                                3), None);
@@ -448,4 +466,6 @@ let sample2 =
   ]
   in
   let seq, ltbl = seq |> Vector.vector_of_list |> reset_id in
-  { signature = Hashtbl.create 0; ltbl; seq }
+  let signature = Hashtbl.create 1 in
+  Hashtbl.add signature "f" (None, List.map string_of_reg [ Argument 0; Argument 1 ], None);
+  { signature; ltbl; seq }

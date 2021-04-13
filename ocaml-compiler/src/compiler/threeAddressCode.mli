@@ -1,7 +1,8 @@
-open ThreeAddressCodeType
 open Util
+open RegsType
+open ThreeAddressCodeType
 
-(* val to_abs_program : ThreeAddressCodeType.t -> AbstractMachineType.t *)
+val to_abs_program : ThreeAddressCodeType.t -> AbstractMachineType.t
 
 val from_abs_func : AbstractMachineType.proc_type -> (labeled_instr Vector.t * label_table) 
 
@@ -15,14 +16,8 @@ val replace_id : instr_type -> int -> instr_type
 
 val string_of_instr : instr_type -> string
 
-val string_of_reg : reg_type -> string
-
-val string_of_regtbl : reg_table -> string
-
 val reset_id : labeled_instr Vector.t -> (labeled_instr Vector.t * label_table)
 
-val make_reg_set : (int * int * int) -> reg_set
-
-val sample_program : t
+val sample1 : t
 
 val sample2 : t

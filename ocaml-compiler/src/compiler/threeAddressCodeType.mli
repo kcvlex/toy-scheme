@@ -1,5 +1,7 @@
 open Util
 
+type reg_type = RegsType.t
+
 type t = {
   signature : (string, arguments_type) Hashtbl.t;
   ltbl : (string, int) Hashtbl.t;
@@ -23,22 +25,9 @@ and value_type =
   | FuncLabel of string
   | JumpLabel of string
   | Quote of AstType.t
-and reg_type =
-  | CallerSaved of int
-  | CalleeSaved of int
-  | Argument of int
-  | Virtual of int
 and arguments_type = clsr_arg_type * common_arg_type * extend_arg_type
 and clsr_arg_type = string option
 and common_arg_type = string list
 and extend_arg_type = string option
-and reg_table = (reg_type, unit) Hashtbl.t
 and labeled_instr = instr_type * string option
 and label_table = (string, int) Hashtbl.t
-and reg_set = {
-  caller_saved_regs : reg_type list;
-  callee_saved_regs : reg_type list;
-  argument_regs : reg_type list;
-  all_regs : reg_type list;
-  reg_sum : int;
-}

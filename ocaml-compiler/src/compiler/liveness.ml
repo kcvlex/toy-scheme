@@ -1,6 +1,8 @@
 open Util
 open ThreeAddressCodeType
 open ThreeAddressCode
+open RegsType
+open Regs
 
 (* FIXME : when call instr *)
 

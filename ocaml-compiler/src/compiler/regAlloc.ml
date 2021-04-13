@@ -1,6 +1,8 @@
 open Util
-open ThreeAddressCode
 open ThreeAddressCodeType
+open ThreeAddressCode
+open RegsType
+open Regs
 
 type t = {
   regs : reg_set;
