@@ -26,10 +26,7 @@ let make_cfg labeling vec =
     let instr = Vector.get vec i in
     match instr with
       | Return _ -> ()
-      | Test (_, JumpLabel s, _) -> 
-          Graph.add_edge cfg i (Hashtbl.find labeling s);
-          add_seq ()
-      | Jump (JumpLabel s, _) ->
+      | Test (_, Label s, _) -> 
           Graph.add_edge cfg i (Hashtbl.find labeling s);
           add_seq ()
       | _ -> add_seq ()
@@ -66,11 +63,11 @@ let calc_use_def vec regs ignore =
       | Bind (r, v, _) -> update_def r; update_use v
       | Move (r, s, _) -> update_def r; update_use (Reg s)
       | Test (v, u, _) -> update_use v; update_use u
-      | Jump (FuncLabel _, _) -> List.iter update_def regs.caller_saved_regs
       | Jump (v, _) -> update_use v
+      | Call (v, _, _) -> update_use v;
       | Return _ -> ()
-      | Load (r, v, _, _) -> update_def r; update_use v
-      | Store (r, v, _, _) -> update_def r; update_use v
+      | Load (r, v, _, _) -> update_def r; update_use (Reg v)
+      | Store (r, v, _, _) -> update_def r; update_use (Reg v)
   done;
   (use, def)
 

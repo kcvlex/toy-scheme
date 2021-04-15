@@ -15,14 +15,15 @@ and value_type =
   | Int of int
   | Bool of bool
   | Nil
+  | List of value_type list
   | Primitive of SymbolType.primitive_sym
   | PrimCall of SymbolType.primitive_sym * value_type list
   | Label of string
   | Ref of ref_type
-  | Allocate of value_type list
+  | Allocate of int * value_type list
   | Quote of AstType.t
   | Cons of value_type * value_type
-  | AccessClosure of string * int list
+  | AccessClosure of ref_type * int list
 and ref_type =
   | Global of string
   | Local of string

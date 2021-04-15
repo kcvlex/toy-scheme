@@ -12,9 +12,10 @@ and instr_type =
   | Move of reg_type * reg_type * int
   | Test of value_type * value_type * int
   | Jump of value_type * int  (* FIXME : rename to call *)
+  | Call of value_type * int * int
   | Return of int
-  | Load of reg_type * value_type * int * int   (* Load virtual register to actual register *)
-  | Store of reg_type * value_type * int * int (* Store actual register related to virtual register *)
+  | Load of reg_type * reg_type * int * int   (* Load virtual register to actual register *)
+  | Store of reg_type * reg_type * int * int (* Store actual register related to virtual register *)
 and value_type =
   | Int of int
   | Bool of bool
@@ -22,8 +23,7 @@ and value_type =
   | Nil
   | PrimCall of SymbolType.primitive_sym * value_type list
   | Primitive of SymbolType.primitive_sym
-  | FuncLabel of string
-  | JumpLabel of string
+  | Label of string
   | Quote of AstType.t
 and arguments_type = clsr_arg_type * common_arg_type * extend_arg_type
 and clsr_arg_type = string option

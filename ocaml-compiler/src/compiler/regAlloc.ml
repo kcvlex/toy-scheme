@@ -9,8 +9,7 @@ type t = {
   intrf_g : reg_type Graph.t;
   proc : (instr_type * string option) Vector.t;
   move_pair : (reg_type * reg_type, unit) Hashtbl.t;
-  move_related : (reg_type, int) Hashtbl.t;
-  freezed : reg_table;
+  move_related : (reg_type, unit) Hashtbl.t;
   spilled : reg_table;
   stack : (reg_type * reg_type list * reg_type list) Stack.t;
 }
@@ -47,6 +46,39 @@ let list_of_ltbl ltbl =
   ltbl |> fun p -> Hashtbl.fold (fun x y l -> (x, y) :: l) p []
        |> List.sort (fun x y -> (snd x) - (snd y))
 
+let update_state alloc =
+  Graph.rm_self_loop alloc.intrf_g;
+  let g = alloc.intrf_g in
+  let all =
+    let all = Graph.all_nodes g in
+    let tbl = Hashtbl.create (List.length all) in
+    List.iter (fun x -> Hashtbl.add tbl x ()) all;
+    tbl
+  in
+  let mr = Hashtbl.copy alloc.move_related in
+  let mp = Hashtbl.copy alloc.move_pair in
+  Hashtbl.clear alloc.move_related;
+  Hashtbl.clear alloc.move_pair;
+  let validate x y =
+    Hashtbl.mem all x &&
+    Hashtbl.mem all y &&
+    Hashtbl.mem mr x &&
+    Hashtbl.mem mr y &&
+    not (Graph.is_same_group g x y) &&
+    not (Graph.has_edge g x y)
+  in
+  let upd x y =
+    if validate x y then begin
+      let x = Graph.represent g x in
+      let y = Graph.represent g y in
+      Hashtbl.add alloc.move_related x ();
+      Hashtbl.add alloc.move_related y ();
+      Hashtbl.add alloc.move_pair (x, y) ()
+    end else
+      ()
+  in
+  Hashtbl.iter (fun (x, y) _ -> upd x y) mp
+
 let insert_callee_save rnum vec =
   let new_vec = Vector.empty () in
   let sv = Vector.empty () in
@@ -59,7 +91,7 @@ let insert_callee_save rnum vec =
     Vector.push_back new_vec (instr, (if i = 0 then name else None))
   done;
   let pushback e = match e with
-    | (Return _, _)->
+    | (Return _, _) ->
         for i = 0 to rnum - 1 do
           let reg = Vector.get sv i in
           let instr = Move (CalleeSaved i, reg, -1) in
@@ -104,15 +136,27 @@ let build regs vec ltbl spilled =
   let g = Graph.make false in
   print_instr vec ltbl;
   let liveness = Liveness.analyze regs vec ltbl is_memreg in
-  print_endline ""; print_endline (Liveness.dump liveness);
   let mp = Hashtbl.create 8 in
   let add_edges r i =
     let live_out = Liveness.live_out liveness i in
     Hashtbl.iter (fun x _ -> Graph.add_edge g r x) live_out
   in
+  let prod t1 t2 =
+    let t = Hashtbl.create (Hashtbl.length t1) in
+    let add x = if Hashtbl.mem t2 x then Hashtbl.add t x () else () in
+    Hashtbl.iter (fun x _ -> add x) t1;
+    t
+  in
+  let saved = List.append regs.caller_saved_regs regs.argument_regs in
   let f instr = match instr with
     | Bind (r, _, i) -> add_edges r i
     | Load (r, _, _, i) -> add_edges r i
+    | Call (v, _, i) ->
+        let live_in = Liveness.live_in liveness i in
+        let live_out = Liveness.live_out liveness i in
+        let live = prod live_in live_out in
+        List.iter (fun x -> 
+          Hashtbl.iter (fun y _ -> Graph.add_edge g x y) live) saved
     | Move (d, s, i) ->
         let live_out = Liveness.live_out liveness i in
         Hashtbl.iter (fun x _-> if x != s then Graph.add_edge g d x else ()) live_out;
@@ -120,35 +164,29 @@ let build regs vec ltbl spilled =
     | _ -> ()
   in
   Vector.iter (fun (x, _) -> f x) vec;
+  (*
   g |> Graph.all_nodes
     |> List.filter is_memreg
     |> List.iter (Graph.rm_node g);
+  *)
   precolor regs g;
-  print_endline ""; print_endline (Graph.dump g string_of_reg);
   let mp =
     let new_mp = Hashtbl.create 8 in
     let add (x, y) _ = if Graph.has_edge g x y then () else Hashtbl.add new_mp (x, y) () in
     Hashtbl.iter add mp; new_mp
   in
-  let mr =
-    let tbl = Hashtbl.create (Hashtbl.length mp) in
-    let add x =
-      let y = if Hashtbl.mem tbl x then Hashtbl.find tbl x else 0 in
-      Hashtbl.replace tbl x (y + 1)
-    in
-    Hashtbl.iter (fun (x, y) _ -> begin add x; add y end) mp; tbl
-  in
-  print_endline (string_of_int regs.reg_sum);
-  {
+  let res = {
     regs = regs;
     proc = vec;
     intrf_g = g;
     move_pair = mp;
-    move_related = mr;
-    freezed = Hashtbl.create 2;
+    move_related = Hashtbl.create 0;
     spilled = spilled;
     stack = Stack.create ()
   }
+  in
+  update_state res;
+  res
 
 let briggs_strategy alloc n1 n2 =
   let k = alloc.regs.reg_sum in
@@ -178,7 +216,6 @@ let george_strategy alloc n1 n2 =
   |> List.map check
   |> List.fold_left (fun x y -> x && y) true
 
-(* FIXME *)
 let check_coalesce alloc n1 n2 =
   if Graph.has_edge alloc.intrf_g n1 n2 then
     false
@@ -189,27 +226,10 @@ let check_coalesce alloc n1 n2 =
   else
     false
 
-let rm_move_pair alloc dst src =
-  Hashtbl.remove alloc.move_pair (dst, src);
-  let dec x =
-    let y = Hashtbl.find alloc.move_related x in
-    let y = y - 1 in
-    if y = 0 then
-      Hashtbl.remove alloc.move_related x
-    else
-      Hashtbl.replace alloc.move_related x y
-  in
-  dec dst; dec src
-
-let rm_self_loop alloc =
-  let nodes = Graph.nodes alloc.intrf_g in
-  List.iter (fun x -> Graph.rm_edge alloc.intrf_g x x) nodes
-
 let exec_coalesce alloc dst src =
   Graph.contraction alloc.intrf_g dst src;
-  Printf.printf "Coalesce : %s %s\n" (string_of_reg dst) (string_of_reg src);
-  rm_self_loop alloc; 
-  rm_move_pair alloc dst src
+  update_state alloc;
+  Printf.printf "Coalesce : %s %s\n" (string_of_reg dst) (string_of_reg src)
 
 let sort_by_deg alloc set =
   set |> fun s -> Hashtbl.fold (fun x _ l -> (x, Graph.degree alloc.intrf_g x) :: l) s []
@@ -217,9 +237,11 @@ let sort_by_deg alloc set =
 
 let rm_node alloc n =
   let g = alloc.intrf_g in
+  let n = Graph.represent g n in
   let adj = Graph.succ g n in
   let grp = Graph.group g n in
   Graph.rm_node g n;
+  update_state alloc;
   Stack.push (n, adj, grp) alloc.stack
 
 let simplify alloc =
@@ -232,8 +254,6 @@ let simplify alloc =
     |> List.map (fun x -> (x, Graph.degree alloc.intrf_g x))
     |> List.sort (fun x y -> (snd x) - (snd y))
   in
-  Printf.printf "[ %s ]\n" (String.concat " " (List.map string_of_reg (fst (List.split deg))));
-  Printf.printf "[ %s ]\n" (String.concat " " (List.map string_of_int (snd (List.split deg))));
   let rec aux lis update = match lis with
     | (n, d) :: xs when d < reg_sum ->
         Printf.printf "Remove %s\n" (string_of_reg n);
@@ -242,7 +262,7 @@ let simplify alloc =
     | _ -> update
   in
   let res = aux deg false in
-  rm_self_loop alloc;
+  update_state alloc;
   res
 
 (* FIXME *)
@@ -262,19 +282,12 @@ let pickup_freeze alloc =
     Some (List.hd lis)
   end
 
-let rebuild_move_pair alloc =
-  let should_remove a b = Graph.has_edge alloc.intrf_g a b in
-  let mp = alloc.move_pair in
-  let rmlis = Hashtbl.fold (fun (a, b) _ l -> if should_remove a b then (a, b) :: l else l) mp [] in
-  List.iter (fun (x, y) -> rm_move_pair alloc x y) rmlis
-
 let coalesce alloc =
   let mplis = Hashtbl.fold (fun x _ l -> x :: l) alloc.move_pair [] in
   let rec col lis = match lis with
     | (dst, src) :: xs ->
         if check_coalesce alloc src dst then begin
           exec_coalesce alloc dst src;
-          rebuild_move_pair alloc;
           true
         end else
           col xs
@@ -297,24 +310,19 @@ let pickup_spill alloc =
   Printf.printf "Potential spill %s\n" (string_of_reg r);
   r
 
-let filter_move_pair f alloc =
-  let mp = Hashtbl.copy alloc.move_pair in
-  let rmlis = Hashtbl.fold (fun (x, y) _ l -> if (f x) && (f y) then l else (x, y) :: l) mp [] in
-  List.iter (fun (x, y) -> rm_move_pair alloc x y) rmlis
-
 let freeze alloc =
   let fr = pickup_freeze alloc in
   match fr with
     | Some r ->
-        filter_move_pair (fun x -> r != x) alloc;
+        Hashtbl.remove alloc.move_related r;
+        update_state alloc;
         true
     | None -> false
 
 let spill alloc =
   let r = pickup_spill alloc in
   Hashtbl.add alloc.spilled r ();
-  rm_node alloc r;
-  filter_move_pair (fun x -> r != x) alloc
+  rm_node alloc r
 
 let remove_nodes alloc =
   let step () =
@@ -373,7 +381,6 @@ let assign_color mapping alloc n =
         |> List.filter (Hashtbl.mem mapping.coloring)
         |> List.map (Hashtbl.find mapping.coloring)
     in
-    Printf.printf "  Adj : [ %s ]\n" (String.concat " " (List.map string_of_int succ));
     let res = Hashtbl.create (List.length succ) in
     List.iter (fun c -> Hashtbl.replace res c ()) succ;
     res
@@ -395,7 +402,7 @@ let restore_node alloc =
   let n, adj, grp = Stack.pop alloc.stack in
   let g = alloc.intrf_g in
   List.iter (Graph.add_node g) grp;
-  List.iter (Graph.contraction g n) grp;
+  List.iter (fun x -> if x != n then Graph.contraction g n x else ()) grp;
   List.iter (Graph.add_edge g n) adj;
   n
 
@@ -413,6 +420,8 @@ let coloring alloc =
     end
   done;
   (cm, spilled)
+  
+let extract_reg r = match r with Reg r -> r | _ -> raise (Invalid_argument "extract_reg")
 
 let rewrite_proc seq spill =
   let new_vec = Vector.empty () in
@@ -421,7 +430,7 @@ let rewrite_proc seq spill =
     | Reg r when was_spilled r ->
         let vr = make_vreg () in
         let mr = get_memreg r in
-        Vector.push_back new_vec (Load (vr, Reg mr, 0, -1), label);
+        Vector.push_back new_vec (Bind (vr, Reg mr, -1), label);
         (Reg vr, None)
     | PrimCall (p, vl) ->
         let rec aux lis label = match lis with
@@ -436,49 +445,54 @@ let rewrite_proc seq spill =
     | _ -> (v, label)
   in
   let rewrite_instr instr label = match instr with
-    | Bind (r, s, i) ->
+    | Bind (r, s, _) ->
         let s, label = replace_reg s label in
         if was_spilled r then
-          Vector.push_back new_vec (Store (get_memreg r, s, 0, i), label)
+          Vector.push_back new_vec (Bind (get_memreg r, s, -1), label)
         else
           (match s with
-            | Reg s -> Vector.push_back new_vec (Move (r, s, i), label)
-            | _ -> Vector.push_back new_vec (Bind (r, s, i), label))
-    | Move (d, s, i) ->
+            | Reg s -> Vector.push_back new_vec (Move (r, s, -1), label)
+            | _ -> Vector.push_back new_vec (Bind (r, s, -1), label))
+    | Move (d, s, _) ->
         let s, label = replace_reg (Reg s) label in
         if was_spilled d then
-          Vector.push_back new_vec (Store (get_memreg d, s, 0, i), label)
+          Vector.push_back new_vec (Bind (get_memreg d, s, -1), label)
         else
           (match s with
-            | Reg s -> Vector.push_back new_vec (Move (d, s, i), label)
-            | _ -> Vector.push_back new_vec (Bind (d, s, i), label))
-    | Test (a, b, i) ->
+            | Reg s -> Vector.push_back new_vec (Move (d, s, -1), label)
+            | _ -> Vector.push_back new_vec (Bind (d, s, -1), label))
+    | Test (a, b, _) ->
         let a, label = replace_reg a label in
         let b, label = replace_reg b label in
-        Vector.push_back new_vec (Test (a, b, i), label)
-    | Jump (a, i) ->
+        Vector.push_back new_vec (Test (a, b, -1), label)
+    | Jump (a, _) ->
         let a, label = replace_reg a label in
-        Vector.push_back new_vec (Jump (a, i), label)
-    | Return i -> Vector.push_back new_vec (Return i, label)
-    | Load (dst, base, i, j) ->
-      let base, label = replace_reg base label in
+        Vector.push_back new_vec (Jump (a, -1), label)
+    | Call (a, b, _) ->
+        let a, label = replace_reg a label in
+        Vector.push_back new_vec (Call (a, b, -1), label)
+    | Return i -> Vector.push_back new_vec (Return (-1), label)
+    | Load (dst, base, i, _) ->
+      let base, label = replace_reg (Reg base) label in
+      let base = extract_reg base in
       if was_spilled dst then begin
         let mem = get_memreg dst in
-        let dst = make_vreg () in
-        Vector.push_back new_vec (Load (dst, base, i, j), label);
-        Vector.push_back new_vec (Store (dst, Reg mem, 0, -1), None)
+        let v = make_vreg () in
+        Vector.push_back new_vec (Load (v, base, i, -1), label);
+        Vector.push_back new_vec (Bind (mem, Reg v, -1), None)
       end else begin
-        Vector.push_back new_vec (Load (dst, base, i, j), label)
+        Vector.push_back new_vec (Load (dst, base, i, -1), label)
       end
-    | Store (src, base, i, j) ->
-        let base, label = replace_reg base label in
+    | Store (base, src, i, _) ->
+        let base, label = replace_reg (Reg base) label in
+        let base = extract_reg base in
         if was_spilled src then begin
           let mem = get_memreg src in
-          let src = make_vreg () in
-          Vector.push_back new_vec (Load (src, Reg mem, 0, -1), label);
-          Vector.push_back new_vec (Store (src, base, i, j), None)
+          let v = make_vreg () in
+          Vector.push_back new_vec (Bind (v, Reg mem, -1), label);
+          Vector.push_back new_vec (Store (base, v, i, -1), None)
         end else begin
-          Vector.push_back new_vec (Store (src, base, i, j), label);
+          Vector.push_back new_vec (Store (base, src, i, -1), label);
         end
   in
   let rec rewrite i =
@@ -539,16 +553,22 @@ let allocate_func_aux vec ltbl regs =
   (Option.get !alloc, Option.get !cm, !vec, !ltbl)
 
 let remove_redundant vec =
-  let rec aux lis = match lis with
+  let rec aux pl lis = match lis with
     | x :: xs ->
         let instr, label = x in
+        let label = match (pl, label) with
+          | (Some _, None) -> pl
+          | (None, Some _) -> label
+          | (None, None) -> None
+          | _ -> raise (Invalid_argument "Labeling")
+        in
         (match instr with
-          | Move (a, b, _) when a = b -> aux xs
-          | _ -> x :: (aux xs))
+          | Move (a, b, _) when a = b -> aux label xs
+          | _ -> (instr, label) :: (aux None xs))
     | [] -> []
   in
   vec |> Vector.list_of_vector
-      |> aux
+      |> aux None
       |> Vector.vector_of_list
 
 let allocate_func seq ltbl regs =
@@ -586,9 +606,10 @@ let allocate_func seq ltbl regs =
         | Move (d, s, i) -> Move (act_reg d, act_reg s, i)
         | Test (a, b, i) -> Test (rewrite_if_reg a, rewrite_if_reg b, i)
         | Jump (a, i) -> Jump (rewrite_if_reg a, i)
+        | Call (a, b, i) -> Call (rewrite_if_reg a, b, i)
         | Return i -> Return i
-        | Load (r, v, offset, i) -> Load (act_reg r, rewrite_if_reg v, offset, i)
-        | Store (r, v, offset, i) -> Store (act_reg r, rewrite_if_reg v, offset, i)
+        | Load (r, v, offset, i) -> Load (act_reg r, extract_reg (rewrite_if_reg (Reg v)), offset, i)
+        | Store (r, v, offset, i) -> Store (act_reg r, extract_reg (rewrite_if_reg (Reg v)), offset, i)
       in
       Vector.push_back new_vec (instr, label);
       rewrite_vec (i + 1) new_vec
@@ -605,17 +626,48 @@ let allocate_experiment reg_num program =
   let seq, ltbl = allocate_func seq ltbl regs in
   { signature; ltbl; seq }
 
-(*
- (* FIXME : remove function from ltbl *)
-let allocate program reg_num =
-  let regs = make_act_regs reg_num in
-  let sigtbl, _, _ = program in
-  let names, procs =
-    let caller_save_num = List.length regs.caller_save_regs in
-    program 
-    |> split_program
-    |> List.map (fun (x, y, z) -> (x, (insert_callee_save caller_save_num y, z, regs)))
-    |> List.split
+let split_program funcs seq =
+  let rec aux cur res rem = match rem with
+    | ((_, Some l) as x) :: xs ->
+        let cur = x :: cur in
+        if Hashtbl.mem funcs l then
+          aux [] (cur :: res) xs
+        else
+          aux cur res xs
+    | x :: xs -> aux (x :: cur) res xs
+    | [] -> res
   in
-  let procs = List.map (fun (x, y, z) -> allocate_func x y z) procs in
-*)
+  seq 
+  |> Vector.list_of_vector
+  |> List.rev
+  |> aux [] []
+  |> List.map Vector.vector_of_list
+
+let allocate reg_num program =
+  let regs = make_reg_set reg_num in
+  let callee_sn = List.length regs.callee_saved_regs in
+  let { signature; ltbl; seq } = program in
+  let allocate_aux v =
+    let v, ltbl = insert_callee_save callee_sn v in
+    let v, _ = allocate_func v ltbl regs in
+    v
+  in
+  let append v1 v2 =
+    let res = Vector.empty () in
+    Vector.iter (fun x -> Vector.push_back res x) v1;
+    Vector.iter (fun x -> Vector.push_back res x) v2;
+    res
+  in
+  let funcs =
+    let tbl = Hashtbl.create (Hashtbl.length signature) in
+    Hashtbl.iter (fun x _ -> Hashtbl.add tbl x ()) signature;
+    tbl
+  in
+  let seq, ltbl =
+    seq
+    |> split_program funcs 
+    |> List.map allocate_aux
+    |> List.fold_left (fun x y -> append x y) (Vector.empty ())
+    |> reset_id
+  in
+  { signature; ltbl; seq }

@@ -1,6 +1,6 @@
 type t
 
-val translate : ClosureType.t -> t
+val translate : ClosureType.t -> AbstractMachineType.t
 
 val eval : t -> unit
 
@@ -12,6 +12,8 @@ val call_and_print : string ->
                      string -> 
                      AbstractMachineType.value_type list -> 
                      AbstractMachineType.t
+
+val raw_allocate : int -> AbstractMachineType.t
 
 val string_of_ref : AbstractMachineType.ref_type -> string
 

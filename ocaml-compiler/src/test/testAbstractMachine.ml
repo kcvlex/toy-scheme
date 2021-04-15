@@ -16,6 +16,7 @@ let () =
             |> ANormalization.normalize_binds
             |> Closure.closure_trans
             |> AbstractMachine.translate
+            |> AbstractMachine.make_machine
   in
   print_program machine;
   AbstractMachine.eval machine

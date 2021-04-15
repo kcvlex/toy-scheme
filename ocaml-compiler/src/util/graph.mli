@@ -10,6 +10,8 @@ val rm_node : 'a t -> 'a -> unit
 
 val rm_edge : 'a t -> 'a -> 'a -> unit
 
+val rm_self_loop : 'a t -> unit
+
 val contraction : 'a t -> 'a -> 'a -> unit
 
 val represent : 'a t -> 'a -> 'a

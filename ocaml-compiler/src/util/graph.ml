@@ -133,16 +133,13 @@ let contract_aux g a b =
 let contraction g a b =
   let a = represent g a in
   let b = represent g b in
-  if a = b then
-    ()
-  else begin
-    let a, b =
-      let al = Hashtbl.length (Hashtbl.find g.edges a) in
-      let bl = Hashtbl.length (Hashtbl.find g.edges b) in
-      if al < bl then (b, a) else (a, b)
-    in
-    contract_aux g a b
-  end
+  assert (a != b);
+  let a, b =
+    let al = Hashtbl.length (Hashtbl.find g.edges a) in
+    let bl = Hashtbl.length (Hashtbl.find g.edges b) in
+    if al < bl then (b, a) else (a, b)
+  in
+  contract_aux g a b
 
 let is_same_group g a b =
   let a = represent g a in
@@ -153,6 +150,10 @@ let group g a =
   let a = represent g a in
   let tbl = Hashtbl.find g.group a in
   Hashtbl.fold (fun x _ l -> x :: l) tbl []
+
+let rm_self_loop g =
+  let nl = nodes g in
+  List.iter (fun x -> rm_edge g x x) nl
 
 let copy_edges edges =
   let res = Hashtbl.create (Hashtbl.length edges) in

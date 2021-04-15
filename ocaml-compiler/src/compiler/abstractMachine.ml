@@ -62,7 +62,7 @@ and translate_value labels value = match value with
         (b, List.flatten bl)
       in
       assert (List.length al = 0);
-      (Cons (Ref (Local s), Allocate a), [])
+      (Cons (Label s, Allocate (List.length a, a)), [])
   | ClosureType.Var "DUMMY" -> (Nil, [])
   | ClosureType.Var s ->
       let s = 
@@ -75,20 +75,23 @@ and translate_value labels value = match value with
   | _ -> raise (Invalid_argument "UNIMPLED")
 and translate_closure c il = match c with
   | ClosureType.ClosureRef (cn, i) -> translate_closure cn (i :: il)
-  | ClosureType.Var s -> AccessClosure (s, il)
+  | ClosureType.Var s -> AccessClosure (Local s, il)
   | _ -> raise (Invalid_argument "AAA")
 
 let make_machine (funcs, jumps) =
+  let mem = Hashtbl.create 8 in
   let frame = {
     cur = (fun (_, _, _, body) -> body) (Hashtbl.find funcs entry_label);
-    mem = Hashtbl.create 8;
+    mem;
   }
   in
+  let globs = Hashtbl.create 8 in
+  Hashtbl.add globs rv_sym DNil;
   let frames = Stack.create () in
   Stack.push frame frames;
   {
     frames;
-    globs = Hashtbl.create 0;
+    globs;
     funcs;
     jumps;
   }
@@ -134,7 +137,7 @@ let translate (clsr_prog: ClosureType.t) =
     Hashtbl.replace funcs entry_label entry;
     (funcs, Hashtbl.create 0)
   in
-  make_machine (funcs, jumps)
+  (funcs, jumps)
 
 let restrict_1arg lis = match lis with
   | x :: [] -> x
@@ -143,6 +146,35 @@ let restrict_1arg lis = match lis with
 let restrict_2arg lis = match lis with
   | x1 :: x2 :: [] -> (x1, x2)
   | _ -> raise (Invalid_argument "must be 2 argument")
+
+let rec string_of_data d = match d with
+  | DInt i -> string_of_int i
+  | DBool true -> "#t"
+  | DBool false -> "#f"
+  | DLabel s -> Printf.sprintf "LABEL(%s)" s
+  | DNil -> "()"
+  | DCons _  ->
+      let lis = string_of_dcons_aux d in
+      let rem, last =
+        let lis = List.rev lis in
+        let hd, tl = (List.hd lis, List.tl lis) in
+        let tl = List.rev tl in
+        (tl, hd)
+      in
+      let rem = rem |> List.map string_of_data |> String.concat " " in
+      let rem = match last with
+        | DNil -> rem
+        | _ -> rem ^ " . " ^ (string_of_data last)
+      in
+      Printf.sprintf "(%s)" rem
+  | DList l -> l |> List.map string_of_data |> String.concat " " |> Printf.sprintf "[ %s ]"
+  | DPrim p -> string_of_sym (PrimitiveSym p)
+  | DQuote a -> Ast.code_of_ast a
+and string_of_dcons_aux d = match d with
+  | DCons (car, cdr) -> (match cdr with
+    | DCons _ -> car :: (string_of_dcons_aux cdr)
+    | _ -> [ car; cdr ])
+  | _ -> raise (Invalid_argument "DCons")
 
 let rec follow_dlist v idxlis = match (v, idxlis) with
   | (DList (x :: xs), y :: ys) ->
@@ -169,27 +201,6 @@ let rec dcons_of_list lis = match lis with
   | x :: xs -> DCons (x, dcons_of_list xs)
   | [] -> DNil
 
-let rec string_of_data d = match d with
-  | DInt i -> string_of_int i
-  | DBool true -> "#t"
-  | DBool false -> "#f"
-  | DLabel s -> Printf.sprintf "LABEL(%s)" s
-  | DNil -> "()"
-  | DCons _ ->
-      let rec aux lis = match lis with
-        | x :: DNil :: [] -> [ string_of_data x ]
-        | x :: y :: [] -> [ string_of_data x; "."; string_of_data y ]
-        | x :: xs -> (string_of_data x) :: (aux xs)
-        | [] -> raise (Invalid_argument "DCons")
-      in
-      d |> list_of_dcons
-        |> aux 
-        |> String.concat " "
-        |> Printf.sprintf "(%s)"
-  | DList l -> l |> List.map string_of_data |> String.concat " " |> Printf.sprintf "[ %s ]"
-  | DPrim p -> string_of_sym (PrimitiveSym p)
-  | DQuote a -> Ast.code_of_ast a
-
 let make_instr_str indent label lis =
   lis |> String.concat ", "
       |> Printf.sprintf "%s%s (%s)" indent label
@@ -210,13 +221,14 @@ let rec string_of_value value = match value with
       (p :: vl) |> String.concat " " |> Printf.sprintf "(%s)"
   | Label s -> Printf.sprintf "LABEL (%s)" s
   | Ref r -> string_of_ref r
-  | Allocate lis -> make_instr_str "" "ALLOCATE" (List.map string_of_value lis)
+  | Allocate (n, lis) -> make_instr_str "" "ALLOCATE" ((string_of_int n) :: (List.map string_of_value lis))
   | Nil -> "nil"
   | Quote a -> Printf.sprintf "QUOTE (%s)" (Ast.code_of_ast a)
   | Cons (car, cdr) -> make_instr_str "" "CONS" (List.map string_of_value [ car; cdr ])
+  | List l -> make_instr_str "" "LIST" (List.map string_of_value l)
   | AccessClosure (s, il) -> 
       il |> List.map string_of_int
-         |> fun x -> s :: x
+         |> fun x -> (string_of_ref s) :: x
          |> make_instr_str "" "ACCESS"
 
 let rec string_of_instr indent instr = match instr with
@@ -250,13 +262,31 @@ let rec string_of_instr indent instr = match instr with
 let string_of_abs abs = string_of_instr "" abs
 
 let string_of_program program =
+  let string_of_args cl args earg =
+    let args = match cl with
+      | Some c -> c :: args
+      | None -> args
+    in
+    match earg with
+      | Some e when List.length args = 0 -> string_of_ref e
+      | Some e ->
+          let a = String.concat " " (List.map string_of_ref args) in
+          let b = string_of_ref e in
+          Printf.sprintf "(%s . %s)" a b 
+      | None -> Printf.sprintf "(%s)" (String.concat " " (List.map string_of_ref args))
+  in
   let funcs, jumps = program in
-  let seq = Hashtbl.fold (fun k (_, _, _, body) l -> (k, body) :: l) funcs [] in
-  let seq = Hashtbl.fold (fun k body l -> (k, body) :: l) jumps seq in
+  let seq =
+    let f label (cl, args, earg, body) =
+      let args = string_of_args cl args earg in
+      let args = Printf.sprintf "Label (%s (%s)):" label args in
+      (args, body)
+    in
+    Hashtbl.fold (fun x y l -> (f x y) :: l) funcs []
+  in
+  let seq = Hashtbl.fold (fun k body l -> (Printf.sprintf "Label (%s):" k, body) :: l) jumps seq in
   seq
-  |> List.map (fun (x, y) -> (x, List.map string_of_abs y))
-  |> List.map (fun (x, y) -> ("Label (" ^ x ^ "):", y))
-  |> List.map (fun (x, xs) -> x :: xs)
+  |> List.map (fun (x, y) -> x :: (List.map string_of_abs y))
   |> List.map (String.concat "\n")
   |> List.fold_left (fun x y -> x ^ "\n\n" ^ y) ""
 
@@ -338,6 +368,7 @@ let rec eval_call machine f args = match f with
       let rem = aux cargs args in
       let () = match (earg, rem) with
         | (Some (Local c), _) -> Hashtbl.replace mem c (dcons_of_list rem)
+        | (Some c, _) -> Hashtbl.replace machine.globs (string_of_ref c) (dcons_of_list rem)
         | (None, []) -> ()
         | _ -> raise (Invalid_argument "eval_call_frame2")
       in
@@ -375,14 +406,18 @@ let rec eval_value machine mem v = match v with
       else 
         Hashtbl.find mem s
   | Ref RV -> if Hashtbl.mem machine.globs rv_sym then Hashtbl.find machine.globs rv_sym else DNil
-  | Allocate l -> DList (List.map (eval_value machine mem) l)
+  | Allocate (n, l) ->
+      assert (List.length l = n);
+      DList (List.map (eval_value machine mem) l)
   | Cons (car, cdr) ->
       let car = eval_value machine mem car in
       let cdr = eval_value machine mem cdr in
       DCons (car, cdr)
   | AccessClosure (s, il) ->
-      let s = Hashtbl.find mem s in
-      follow_dlist s il
+      (Ref s)
+      |> eval_value machine mem
+      |> fun s -> follow_dlist s il
+  | List l -> DList (List.map (eval_value machine mem) l)
 
 let eval_step machine = 
   let { mem; cur } = Stack.pop machine.frames in
@@ -427,6 +462,7 @@ let rec eval machine =
     ()
   else begin
     eval_step machine;
+    (* Printf.printf "RV : %s\n" (string_of_data (Hashtbl.find machine.globs "__RV")); *)
     eval machine
   end
 
@@ -446,6 +482,39 @@ let link p1 p2 =
   add_f f1; add_f f2;
   add_j j1; add_j j2;
   (f, j)
+
+let raw_allocate upper =
+  let arg_i i = 
+    i 
+    |> fun i -> RegsType.Argument i 
+    |> Regs.string_of_reg 
+    |> fun i -> Ref (Global i)
+  in
+  let make_list n =
+    let rec aux i =
+      if i = n then
+        []
+      else
+        let a = arg_i (i + 1) in
+        let ax = aux (i + 1) in
+        a :: ax
+    in
+    List (aux 0)
+  in
+  let rec make_test i =
+    if i = upper then
+      Return Nil
+    else
+      let p = PrimCall (EQ, [ Int i; Ref (Global rv_sym) ]) in
+      let e1 = Return (make_list i) in
+      let e2 = make_test (i + 1) in
+      Test (p, [ e1 ], [ e2 ])
+  in
+  let body = make_test 0 in
+  let ftbl = Hashtbl.create 1 in
+  let jtbl = Hashtbl.create 0 in
+  Hashtbl.add ftbl "allocate" (None, [ Global rv_sym ], None, [ body ]);
+  (ftbl, jtbl)
 
 let call_and_print name f args =
   let call = Call (Label f, args) in

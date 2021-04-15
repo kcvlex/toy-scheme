@@ -9,7 +9,7 @@
          testGraph
          testLivness
          testRegAlloc
-         testDecompiler))
+         testCompiler))
 (env
   (dev
     (flags (:standard -warn-error -A))))
