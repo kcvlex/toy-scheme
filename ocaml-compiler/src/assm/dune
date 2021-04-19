@@ -1,0 +1,4 @@
+(library
+  (libraries util compiler)
+  (modules_without_implementation riscvAssm)
+  (name assm))
