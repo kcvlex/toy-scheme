@@ -1,4 +1,11 @@
 (library
   (libraries util compiler)
-  (modules_without_implementation riscvAssm)
+  (modules_without_implementation riscvAssm
+                                  pseudoInstr
+                                  actualInstr
+                                  rv32i)
   (name assm))
+
+(env
+  (dev
+    (flags (:standard -warn-error -A))))

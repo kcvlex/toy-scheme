@@ -1,17 +1,65 @@
-type t = (ops_type list * instr_type list) list
+type reg_type =
+  | ZERO
+  | RA
+  | SP
+  | FP
+  | Tmp of int
+  | Arg of int
+  | CalleeSaved of int
+
+type r_type = {
+  rs1 : reg_type;
+  rs2 : reg_type;
+  rd : reg_type;
+  funct3 : int;
+  funct7 : int;
+  opcode : int;
+}
+type i_type = {
+  rs1 : reg_type;
+  rd : reg_type;
+  imm : int;
+  funct3 : int;
+  opcode : int;
+}
+type s_type = {
+  rs1 : reg_type;
+  rs2 : reg_type;
+  imm : int;
+  funct3 : int;
+  opcode : int;
+}
+type b_type = {
+  rs1 : reg_type;
+  rs2 : reg_type;
+  imm : int;
+  funct3 : int;
+  opcode : int;
+}
+type u_type = {
+  rd : reg_type;
+  imm : int;
+  opcode : int;
+}
+type j_type = {
+  rd : reg_type;
+  imm : int;
+  opcode : int;
+}
 
 type ops_type =
   | File of string
   | Glob of string
   | Local of string
-  | Section of sec_type * string
+  | Section of sec_type
   | String of string
 and sec_type =
   | Text
   | Data
   | Rodata
   | Bss
-and instr_type =
+
+type instr_type =
   | LUI    of u_type
   | AUIPC  of u_type
   | JAL    of j_type
@@ -49,50 +97,5 @@ and instr_type =
   | SRA    of r_type
   | OR     of r_type
   | AND    of r_type
-and reg_type =
-  | ZERO
-  | RA
-  | SP
-  | FP
-  | Tmp of int
-  | Arg of int
-  | CalleeSaved of int
-and r_type = {
-  rs1 : reg_type;
-  rs2 : reg_type;
-  rd : reg_type;
-  funct3 : int;
-  funct7 : int;
-  opcode : int;
-}
-and i_type = {
-  rs1 : reg_type;
-  rd : reg_type;
-  imm : int;
-  funct3 : int;
-  opcode : int;
-}
-and s_type = {
-  rs1 : reg_type;
-  rs2 : reg_type;
-  imm : int;
-  funct3 : int;
-  opcode : int;
-}
-and b_type = {
-  rs1 : reg_type;
-  rs2 : reg_type;
-  imm : int;
-  funct3 : int;
-  opcode : int;
-}
-and u_type = {
-  rd : reg_type;
-  imm : int;
-  opcode : int;
-}
-and j_type = {
-  rd : reg_type;
-  imm : int;
-  opcode : int;
-}
+
+type t = (ops_type list * instr_type list) list
