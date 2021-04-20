@@ -1,5 +1,6 @@
 open SymbolType
 open Symbol
+open Util
 open CpsType
 
 let cont_id_slot = SlotNumber.make (fun x -> ContSym x)

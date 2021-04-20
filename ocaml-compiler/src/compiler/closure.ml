@@ -1,5 +1,6 @@
 open ClosureType
 open SymbolType
+open Util
 
 type fv_list = fv_ele list
 and fv_ele =

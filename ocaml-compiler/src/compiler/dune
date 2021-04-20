@@ -12,7 +12,6 @@
                                   regsType
                                   abstractMachineType
                                   threeAddressCodeType
-                                  riscvInstr
                                   anfType)
   (name compiler))
 

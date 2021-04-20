@@ -1,4 +1,5 @@
 open AstType
+open Util
 
 module SMap = Map.Make(String)
 

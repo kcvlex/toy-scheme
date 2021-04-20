@@ -1,3 +1,4 @@
+open Util
 open AnfType
 open SymbolType
 open Symbol
