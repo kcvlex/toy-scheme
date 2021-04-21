@@ -1,5 +1,5 @@
 open Compiler
-open TestUtil
+open Testtool
 
 let decorate clo = match clo with
   | AstType.Let (l, body) ->
@@ -25,16 +25,18 @@ let add_call s =
 
 let () =
   let code = 
-    source2 |> Ast.make_ast
-            |> Ast.normalize
-            |> Cps.cps_trans
-            |> AdmBetaReduction.normalize
-            |> ANormalization.a_normalize
-            |> ANormalization.normalize_binds
-            |> Closure.closure_trans
-            |> Closure.ast_of_clo
-            |> decorate
-            |> Ast.code_of_ast
-            |> add_call
+    TestUtil.source2 
+    |> Ast.make_ast
+    |> Ast.normalize
+    |> Cps.cps_trans
+    |> AdmBetaReduction.normalize
+    |> ANormalization.a_normalize
+    |> ANormalization.normalize_binds
+    |> Closure.closure_trans
+    |> Closure.ast_of_clo
+    |> decorate
+    |> Ast.code_of_ast
+    |> add_call
   in
-  print_label "Closure Trans"; print_endline code
+  TestUtil.print_label "Closure Trans";
+  print_endline code

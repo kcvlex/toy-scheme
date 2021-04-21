@@ -1,0 +1,6 @@
+(library
+  (name testtool))
+
+(env
+  (dev
+    (flags (:standard -warn-error -A))))

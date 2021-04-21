@@ -1,5 +1,3 @@
-open Compiler
-
 let decoration =
   let rec repeat n s =
     if n = 0 then "" else (s ^ (repeat (n - 1) s))

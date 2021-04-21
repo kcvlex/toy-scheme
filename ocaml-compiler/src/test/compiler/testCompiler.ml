@@ -1,6 +1,6 @@
 open Compiler
 open Util
-open TestUtil
+open Testtool
 
 (*
  * --------------------------------
@@ -75,7 +75,7 @@ let string_of_label label =
     | Some l -> l ^ ":"
     | None -> ""
   in
-  rfill " " 10 label
+  rfill " " 24 label
 
 let string_of_proc seq =
   seq |> Vector.list_of_vector
@@ -87,21 +87,30 @@ let print_machine machine =
           |> print_endline
 
 let () =
-  let reg_num = (0, 1, 2) in
-  let allocated = RegAlloc.allocate_experiment reg_num ThreeAddressCode.sample2 in
-  let () =
-    let seq = allocated.seq in
-    let lis = string_of_proc seq in
-    print_label "Register Allocation";
-    print_endline (String.concat "\n" lis)
+  let reg_num = (3, 3, 7) in
+  let allocated =
+    TestUtil.source3 
+    |> Ast.make_ast
+    |> Ast.normalize
+    |> Cps.cps_trans
+    |> AdmBetaReduction.normalize
+    |> ANormalization.a_normalize
+    |> ANormalization.normalize_binds
+    |> Closure.closure_trans
+    |> AbstractMachine.translate
+    |> ThreeAddressCode.from_abs_program
+    |> RegAlloc.allocate reg_num
   in
-  let make_int i = AbstractMachineType.Int i in
-  let entry = AbstractMachine.call_and_print "entry" "f" [ make_int 42; make_int 42 ] in
+  let () =
+    TestUtil.print_label "Register Allocation";
+    allocated.seq |> string_of_proc |> String.concat "\n" |> print_endline
+  in
   let machine =
     allocated
     |> ThreeAddressCode.to_abs_program
-    |> AbstractMachine.link entry
+    |> AbstractMachine.link (AbstractMachine.raw_allocate 6)
     |> AbstractMachine.make_machine
   in
+  TestUtil.print_label "Abstract Machine";
   print_machine machine;
   AbstractMachine.eval machine

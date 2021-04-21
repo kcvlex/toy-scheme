@@ -1,5 +1,5 @@
 (tests
-  (libraries compiler)
+  (libraries compiler testtool)
   (names testAst
          testCps
          testBetaReduction

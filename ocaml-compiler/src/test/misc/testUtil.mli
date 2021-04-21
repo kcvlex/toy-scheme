@@ -1,5 +1,3 @@
-open Compiler
-
 val source1 : string
 
 val source2 : string

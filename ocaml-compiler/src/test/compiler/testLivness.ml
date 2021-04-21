@@ -1,5 +1,5 @@
 open Util
-open TestUtil
+open Testtool
 open Compiler
 
 let vreg2str vr = match vr with
@@ -51,4 +51,4 @@ let () =
     else
       ()
   done;
-  print_label "test passed : Liveness analysis"
+  TestUtil.print_label "test passed : Liveness analysis"

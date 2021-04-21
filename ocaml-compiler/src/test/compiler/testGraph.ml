@@ -1,5 +1,5 @@
 open Util
-open TestUtil
+open Testtool
 
 let a = "a"
 let b = "b"
@@ -86,4 +86,4 @@ let () =
   validate1 g;
   Graph.rm_node g d;
   validate2 g;
-  print_label "test passed : Graph"
+  TestUtil.print_label "test passed : Graph"
