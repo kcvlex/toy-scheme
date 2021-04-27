@@ -169,6 +169,7 @@ let rec string_of_data d = match d with
       Printf.sprintf "(%s)" rem
   | DList l -> l |> List.map string_of_data |> String.concat " " |> Printf.sprintf "[ %s ]"
   | DPrim p -> string_of_sym (PrimitiveSym p)
+  | DPrimCLO p -> Printf.sprintf "%s_clo" (string_of_sym (PrimitiveSym p))
   | DQuote a -> Ast.code_of_ast a
 and string_of_dcons_aux d = match d with
   | DCons (car, cdr) -> (match cdr with
@@ -215,6 +216,7 @@ let rec string_of_value value = match value with
   | Bool true -> "#t"
   | Bool false -> "#f"
   | Primitive p -> string_of_sym (PrimitiveSym p)
+  | PrimitiveCLO p -> Printf.sprintf "%s_clo" (string_of_sym (PrimitiveSym p))
   | PrimCall (p, vl) ->
       let p = string_of_sym (PrimitiveSym p) in
       let vl = List.map string_of_value vl in
@@ -347,6 +349,15 @@ let rec eval_call machine f args = match f with
   | DPrim p -> 
       let v = call_prim p args in
       Hashtbl.replace machine.globs rv_sym v
+  | DPrimCLO APPLY ->
+      let args = List.tl args in
+      let f, args = restrict_2arg args in
+      let args = list_of_dcons args in
+      eval_call machine f args
+  | DPrimCLO p ->
+      let args = List.tl args in
+      let v = call_prim p args in
+      Hashtbl.replace machine.globs rv_sym v
   | DLabel f ->
       let (cl, cargs, earg, body) = Hashtbl.find machine.funcs f in
       let cargs = match cl with
@@ -381,6 +392,7 @@ let rec eval_value machine mem v = match v with
   | Int i -> DInt i
   | Bool b -> DBool b
   | Primitive p -> DPrim p
+  | PrimitiveCLO p -> DCons (DPrimCLO p, DNil)
   | Label s -> DLabel s
   | Nil -> DNil
   | Quote a -> DQuote a

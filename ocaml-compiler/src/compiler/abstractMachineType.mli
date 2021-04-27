@@ -17,6 +17,7 @@ and value_type =
   | Nil
   | List of value_type list
   | Primitive of SymbolType.primitive_sym
+  | PrimitiveCLO of SymbolType.primitive_sym
   | PrimCall of SymbolType.primitive_sym * value_type list
   | Label of string
   | Ref of ref_type
@@ -36,4 +37,5 @@ and data_type =
   | DCons of data_type * data_type
   | DList of data_type list
   | DPrim of SymbolType.primitive_sym
+  | DPrimCLO of SymbolType.primitive_sym
   | DQuote of AstType.t

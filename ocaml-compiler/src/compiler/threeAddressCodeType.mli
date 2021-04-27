@@ -12,7 +12,7 @@ and instr_type =
   | Move of reg_type * reg_type * int
   | Test of value_type * value_type * int
   | Jump of value_type * int  (* FIXME : rename to call *)
-  | Call of value_type * int * int
+  | Call of value_type * reg_type list * int
   | Return of int
   | Load of reg_type * reg_type * int * int   (* Load virtual register to actual register *)
   | Store of reg_type * reg_type * int * int (* Store actual register related to virtual register *)

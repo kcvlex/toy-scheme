@@ -100,7 +100,7 @@ let string_of_instr instr = match instr with
       let b = string_of_value b in
       Printf.sprintf "if %s then %s" a b
   | Jump (a, _) -> Printf.sprintf "jump %s" (string_of_value a)
-  | Call (a, b, _) -> Printf.sprintf "call %s %d" (string_of_value a) b
+  | Call (a, _, _) -> Printf.sprintf "call %s" (string_of_value a)
   | Return _ -> "return"
   | Load (a, b, c, _) ->
       let a = string_of_reg a in
@@ -114,22 +114,47 @@ let string_of_instr instr = match instr with
 
 (******************** Trans AbstractMachineCode to ThreeAddressCode ********************)
 let rv_reg = Argument 0
+let wsize = 8
+let sentinel_num = Int32.min_int |> Int32.to_int
 
 let make_assign dst src = match src with
   | Reg r -> Move (dst, r, -1)
   | _ -> Bind (dst, src, -1)
+
+let argreg_list l r =
+  let rec aux idx =
+    if idx = r then
+      []
+    else
+      (Argument idx) :: (aux (idx + 1))
+  in
+  aux l
 
 let call_func vec f args =
   let rec aux i l = match l with
     | x :: xs -> Vector.push_back vec (make_assign (Argument i) x, None); aux (i + 1) xs
     | [] -> ()
   in
-  aux 0 args;
-  let label = match f with
-    | Primitive _ | Label _ | Reg _ -> f
-    | _ -> raise (Invalid_argument "Jump")
+  let set_sentinel l =
+    let reg = Argument l in
+    let mv = make_assign reg (Int sentinel_num) in
+    Vector.push_back vec (mv, None)
   in
-  Vector.push_back vec (Call (label, List.length args, -1), None)
+  match f with
+    | Reg r ->
+        aux 1 args;
+        let car = PrimCall (CAR, [ f ]) in
+        let cdr = PrimCall (CDR, [ f ]) in
+        let bind_clsr = Bind (Argument 0, cdr, -1) in
+        let bind_f = Bind (r, car, -1) in
+        Vector.push_back vec (bind_clsr, None);
+        Vector.push_back vec (bind_f, None);
+        Vector.push_back vec (Call (f, argreg_list 0 (List.length args + 1), -1), None)
+    | Primitive _ | Label _ ->
+        aux 0 args;
+        set_sentinel (List.length args);
+        Vector.push_back vec (Call (f, argreg_list 0 (List.length args), -1), None)
+    | _ -> raise (Invalid_argument "Jump")
 
 let call_prim p vec args = match p with
     | ADD | SUB | MUL | DIV -> (match args with
@@ -388,30 +413,18 @@ let rec abs_of_block b = match b with
       [ res ]
   | x :: xs -> 
       let x = match x with
+        | Bind (r, Primitive p, _) -> AbstractMachineType.Bind (trans_reg r, PrimitiveCLO p)
         | Bind (r, v, _) -> AbstractMachineType.Bind (trans_reg r, abs_of_value v)
         | Move (dst, src, _) ->
             let dst = trans_reg dst in
             let src = trans_reg src in
             AbstractMachineType.Bind (dst, AbstractMachineType.Ref src)
         | Jump (v, _) -> AbstractMachineType.Jump (abs_of_value v)
-        | Call (v, n, _) ->
-            let args =
-              let upper =
-                if v = Label "allocate" then 1 else n
-              in
-              let rec aux i = 
-                if i = upper then 
-                  []
-                else
-                  let a = 
-                    if i = 0 then "__RV" else (string_of_reg (Argument i)) 
-                  in
-                  let a = AbstractMachineType.Ref (Global a) in
-                  a :: (aux (i + 1))
-              in
-              aux 0
-            in
-            AbstractMachineType.Call (abs_of_value v, args)
+        | Call (v, _, _) when v = Label "allocate" -> 
+            AbstractMachineType.Call (abs_of_value v, [ abs_of_value (Reg (Argument 0)) ])
+        | Call (v, l, _) ->
+            let l = List.map (fun x -> Reg x) l in
+            AbstractMachineType.Call (abs_of_value v, List.map abs_of_value l)
         | Return _ -> AbstractMachineType.Return (Ref abs_rv)
         | Load (dst, src, offset, _) ->
             (* FIXME *)
