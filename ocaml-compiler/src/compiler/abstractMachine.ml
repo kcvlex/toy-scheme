@@ -166,7 +166,7 @@ let rec string_of_data d = match d with
         | DNil -> rem
         | _ -> rem ^ " . " ^ (string_of_data last)
       in
-      Printf.sprintf "(%s)" rem
+      Printf.sprintf "CONS (%s)" rem
   | DList l -> l |> List.map string_of_data |> String.concat " " |> Printf.sprintf "[ %s ]"
   | DPrim p -> string_of_sym (PrimitiveSym p)
   | DPrimCLO p -> Printf.sprintf "%s_clo" (string_of_sym (PrimitiveSym p))
@@ -345,15 +345,15 @@ let rec eval_call machine f args = match f with
   | DPrim APPLY ->
       let f, args = restrict_2arg args in
       let args = list_of_dcons args in
-      eval_call machine f args
+      (match f with
+        | DCons (f, clsr) -> eval_call machine f (clsr :: args)
+        | _ -> raise (Invalid_argument "apply"))
   | DPrim p -> 
       let v = call_prim p args in
       Hashtbl.replace machine.globs rv_sym v
   | DPrimCLO APPLY ->
       let args = List.tl args in
-      let f, args = restrict_2arg args in
-      let args = list_of_dcons args in
-      eval_call machine f args
+      eval_call machine (DPrim APPLY) args
   | DPrimCLO p ->
       let args = List.tl args in
       let v = call_prim p args in

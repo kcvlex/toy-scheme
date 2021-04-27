@@ -147,6 +147,7 @@ let call_func vec f args =
         let cdr = PrimCall (CDR, [ f ]) in
         let bind_clsr = Bind (Argument 0, cdr, -1) in
         let bind_f = Bind (r, car, -1) in
+        set_sentinel (List.length args + 1);
         Vector.push_back vec (bind_clsr, None);
         Vector.push_back vec (bind_f, None);
         Vector.push_back vec (Call (f, argreg_list 0 (List.length args + 1), -1), None)
