@@ -3,14 +3,14 @@ open Util
 
 module SMap = Map.Make(String)
 
-let y_star = "Y-star"
+let y_star = "Y_star"
 let y_star_body =
   "(lambda l \
      ((lambda (u) (u u)) \
       (lambda (p) \
         (map (lambda (li) (lambda x (apply (apply li (p p)) x))) l))))"
 
-let open_map = "open-map"
+let open_map = "open_map"
 let open_map_body =
   "(lambda (rec f l) \
      (if (null? l) \
@@ -18,7 +18,7 @@ let open_map_body =
          (cons (f (car l)) (rec rec f (cdr l)))))"
 
 let map = "map"
-let map_body = "(lambda (f l) (open-map open-map f l))"
+let map_body = "(lambda (f l) (open_map open_map f l))"
   
 let rec code_of_ast ast =
   let make_lambda args body = "(lambda " ^ args ^ " " ^ body ^ ")" in
@@ -90,7 +90,7 @@ let rename =
   fun s -> (SlotNumber.fresh sl) ^ s
 
 let add_defs map src dst =
-  List.fold_left2 (fun x y z -> SMap.add y (if y = "Y-star" then y else z) x) map src dst
+  List.fold_left2 (fun x y z -> SMap.add y (if y = "Y_star" then y else z) x) map src dst
 
 let (>::) x xs = match x with
   | Some s -> s :: xs

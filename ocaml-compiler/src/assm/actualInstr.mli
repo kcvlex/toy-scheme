@@ -1,16 +1,17 @@
 type reg_type = Rv32i.reg_type
+type imm_type = Rv32i.imm_type
 
-type branch_type = { lhs : reg_type; rhs : reg_type; offset : string; }
-type load_type = { base : reg_type; dst : reg_type; offset : int; }
-type store_type = { base : reg_type; src : reg_type; offset : int; }
-type op_imm_type = { lhs : reg_type; rhs : int; dst : reg_type; }
+type branch_type = { lhs : reg_type; rhs : reg_type; offset : imm_type; }
+type load_type = { base : reg_type; dst : reg_type; offset : imm_type; }
+type store_type = { base : reg_type; src : reg_type; offset : imm_type; }
+type op_imm_type = { lhs : reg_type; rhs : imm_type; dst : reg_type; }
 type op_type = { lhs : reg_type; rhs : reg_type; dst : reg_type; }
 
 type t = 
-  | LUI   of { dst : reg_type; imm: int; }
-  | AUIPC of { dst : reg_type; imm : int; }
-  | JAL   of { dst : reg_type; offset : int; }
-  | JALR  of { base : reg_type; dst : reg_type; offset : int; }
+  | LUI   of { dst : reg_type; imm: imm_type; }
+  | AUIPC of { dst : reg_type; imm : imm_type; }
+  | JAL   of { dst : reg_type; offset : imm_type; }
+  | JALR  of { base : reg_type; dst : reg_type; offset : imm_type; }
   | BEQ   of branch_type
   | BNE   of branch_type
   | BLT   of branch_type

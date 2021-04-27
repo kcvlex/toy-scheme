@@ -16,6 +16,8 @@ val string_of_instr : instr_type -> string
 
 val reset_id : labeled_instr Vector.t -> (labeled_instr Vector.t * label_table)
 
+val set_logging : bool -> unit
+
 val sample1 : t
 
 val sample2 : t

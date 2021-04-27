@@ -66,7 +66,8 @@ let rec collect_fv anf name defined tbl =
 and collect_fv_term term name defined tbl = match term with
   | AnfType.Lambda (sl, s, body) ->
       let defined = List.fold_left (fun x y -> SS.add y x) SS.empty (s >:: sl) in
-      Hashtbl.replace tbl name SS.empty; collect_fv body name defined tbl
+      Hashtbl.replace tbl name SS.empty;
+      collect_fv body name defined tbl
   | AnfType.Ref s ->
       if SS.mem s defined then
         ()
@@ -169,7 +170,6 @@ let closure_trans anf =
   allfv := all_fv fvtbl;
   let body = closure_trans_aux anf "DUMMY" [] SS.empty fvtbl in
   { procs = List.rev !procs; body = body }
-
 
 let rec ast_of_clo_expr expr = match expr with
   | Term t -> ast_of_clo_term t

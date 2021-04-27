@@ -7,6 +7,14 @@ type reg_type =
   | Arg of int
   | CalleeSaved of int
 
+type imm_type =
+  | Int of int
+  | Raw of string
+  | Hi of string * int
+  | Lo of string * int
+  | PcrelHi of string * int
+  | PcrelLo of string
+
 type r_type = {
   rs1 : reg_type;
   rs2 : reg_type;
@@ -47,12 +55,16 @@ type j_type = {
   opcode : int;
 }
 
-type ops_type =
+type var_type =
+  | Symbol of string
+  | Num of Int32.t
+and ops_type =
   | File of string
-  | Glob of string
-  | Local of string
+  | Globl of var_type
+  | Local of var_type
   | Section of sec_type
   | String of string
+  | Word of var_type
 and sec_type =
   | Text
   | Data

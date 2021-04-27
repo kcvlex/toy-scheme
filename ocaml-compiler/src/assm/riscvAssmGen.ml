@@ -4,15 +4,18 @@ open Rv32i
 open RiscvAssm
 open PseudoInstr
 open ActualInstr
+open Builtin
 
 type psym_type = SymbolType.primitive_sym
 
 exception Unimpled
 
+let wsize = 8  (* !!!! FIXME !!!! *)
+
 type atomic_value_type =
   | Reg of reg_type
-  | Imm of int
-  | Symbol of string
+  | Int of int
+  | Sym of string
 and value_type =
   | Atomic of atomic_value_type
   | UnaryOp of psym_type * atomic_value_type
@@ -32,9 +35,9 @@ let extract_atomic a = match a with
   | _ -> raise (Invalid_argument "must atomic value")
 
 let make_assign r s = match s with
-  | Reg s -> Pseudo (MV { rd = r; rs = s})
-  | Imm i -> Pseudo (LI { rd = r; imm = i; })
-  | Symbol s -> Pseudo (LG { rd = r; symbol = s })  (* FIXME : distinguish LA from LG *)
+  | Reg s -> Pseudo (MV { rd = r; rs = s })
+  | Int s -> Pseudo (LI { rd = r; imm = s; })
+  | Sym s -> Pseudo (LA { rd = r; symbol = s })
 
 let int_of_bool b = if b then 1 else 0
 
@@ -46,7 +49,7 @@ let mem_mapping seq =
       ()
     else begin
       let id = Hashtbl.length tbl + 3 in
-      let id = (-4) * id in
+      let id = (-wsize) * id in
       Hashtbl.add tbl s id;
     end
   in
@@ -78,29 +81,26 @@ let mem_mapping seq =
   aux seq;
   tbl
 
-let prolog  = [
-  Actual (SW { src = RA; base = SP; offset = 0 });
-  Actual (SW { src = FP; base = SP; offset = (-4) });
-  Actual (SW { src = SP; base = SP; offset = (-8) });
+let gen_prologue var_num = [
+  Actual (SW { src = RA; base = SP; offset =  Int 0 });
+  Actual (SW { src = FP; base = SP; offset =  Int (-1 * wsize) });
+  Actual (SW { src = SP; base = SP; offset =  Int (-1 * wsize * 2) });
   Pseudo (MV { rd = FP; rs = SP });
-  Actual (ADDI { dst = SP; lhs = SP; rhs = (-12) })
+  Actual (ADDI { dst = SP; lhs = SP; rhs = Int (-1 * wsize * (var_num + 3)) })
 ]
 
-let epilog = [
-  Actual (LW { dst = RA; base = FP; offset = 0 });
-  Actual (LW { dst = SP; base = FP; offset = (-8) });
-  Actual (LW { dst = FP; base = FP; offset = (-4) });
+let epilogue = [
+  Actual (LW { dst = RA; base = FP; offset = Int 0 });
+  Actual (LW { dst = SP; base = FP; offset = Int (-1 * wsize * 2) });
+  Actual (LW { dst = FP; base = FP; offset = Int (-1 * wsize * 1) });
 ]
 
 (* Convert *)
 let convert_reg r = match r with
   | RegsType.CallerSaved i when 0 <= i && i <= 6 -> Tmp i
-  | RegsType.CalleeSaved 0 -> FP
-  | RegsType.CalleeSaved i when 1 <= i && i <= 11 -> CalleeSaved i
+  | RegsType.CalleeSaved i when 0 <= i && i <= 10 -> CalleeSaved (i + 1)
   | RegsType.Argument i when 0 <= i && i <= 7 -> Arg i
-  | _ -> raise (Invalid_argument "register")
-
-let convert_prim p = Printf.sprintf "__%s" (Symbol.string_of_sym (PrimitiveSym p))
+  | _ -> print_endline (Regs.string_of_reg r); raise (Invalid_argument "register")
 
 let constant_conv p a b = match p with
   | SymbolType.ADD -> a + b
@@ -112,13 +112,13 @@ let constant_conv p a b = match p with
   | _ -> raise (Invalid_argument "constant_conv")
 
 let rec convert_value value = match value with
-  | ThreeAddressCodeType.Int i -> (Atomic (Imm i), [])
-  | ThreeAddressCodeType.Bool b -> (Atomic (Imm (if b then 1 else 0)), [])
+  | ThreeAddressCodeType.Int i -> (Atomic (Int i), [])
+  | ThreeAddressCodeType.Bool b -> (Atomic (Int (if b then 1 else 0)), [])
   | ThreeAddressCodeType.Reg r -> (Atomic (Reg (convert_reg r)), [])
-  | ThreeAddressCodeType.Nil -> (Atomic (Imm 0), [])
+  | ThreeAddressCodeType.Nil -> (Atomic (Int 0), [])
   | ThreeAddressCodeType.PrimCall (p, args) -> convert_primcall p args
-  | ThreeAddressCodeType.Primitive p -> (Atomic (Symbol (convert_prim p)), [])
-  | ThreeAddressCodeType.Label s -> (Atomic (Symbol s), [])
+  | ThreeAddressCodeType.Primitive p -> (Atomic (Sym (closure_of_prim p)), [])
+  | ThreeAddressCodeType.Label s -> (Atomic (Sym s), [])
   | ThreeAddressCodeType.Quote _ -> raise (Invalid_argument "UNIMPLED")
 and convert_primcall p args =
   let make_call f = Pseudo (CALL { offset = f }) in
@@ -128,12 +128,13 @@ and convert_primcall p args =
     assert (List.length al = 0);
     List.map extract_atomic a
   in
+  (* FIXME : convert to clo style *) 
   match p with
     | SymbolType.ADD | SymbolType.SUB | SymbolType.MUL | SymbolType.DIV 
     | SymbolType.EQ | SymbolType.LESS ->
         let a, b = restrict_2arg args in
         let res = match (a, b) with
-          | (Imm a, Imm b) -> Atomic (Imm (constant_conv p a b))
+          | (Int a, Int b) -> Atomic (Int (constant_conv p a b))
           | _ -> BinOp (p, a, b)
         in
         (res, [])
@@ -144,12 +145,12 @@ and convert_primcall p args =
         let a, b = restrict_2arg args in
         let mv1 = make_assign (Arg 0) a in
         let mv2 = make_assign (Arg 1) b in
-        let call = make_call (convert_prim p) in
+        let call = make_call (closure_of_prim p) in
         (Atomic (Reg (Arg 0)), [ mv1; mv2; call ])
     | SymbolType.CAR | SymbolType.CDR | SymbolType.DISPLAY ->
         let a = restrict_1arg args in
         let mv = make_assign (Arg 0) a in
-        let call = make_call (convert_prim p) in
+        let call = make_call (closure_of_prim p) in
         (Atomic (Reg (Arg 0)), [ mv; call ])
     | SymbolType.LIST ->
         let rec aux i lis = match lis with
@@ -157,7 +158,7 @@ and convert_primcall p args =
               let x = make_assign (Arg (i + 1)) x in
               let xs = aux (i + 1) xs in
               x :: xs
-          | [] -> [ make_call (convert_prim p) ]
+          | [] -> [ make_call (closure_of_prim p) ]
         in
         let mv1 = Pseudo (LI { rd = Arg 0; imm = List.length args }) in
         (Atomic (Reg (Arg 0)), mv1 :: (aux 0 args))
@@ -166,12 +167,12 @@ let convert_instr memtbl instr =
   let recv v = convert_value v in
   let gen_load dst base =
     let dst = convert_reg dst in
-    let offset = Hashtbl.find memtbl base in
+    let offset = Rv32i.Int (Hashtbl.find memtbl base) in
     LW { dst; base = FP; offset }
   in
   let gen_store base src =
     let src = convert_reg src in
-    let offset = Hashtbl.find memtbl base in
+    let offset = Rv32i.Int (Hashtbl.find memtbl base) in
     SW { base = FP; src; offset }
   in
   match instr with
@@ -182,12 +183,13 @@ let convert_instr memtbl instr =
         let s, sl = recv s in
         let instr = match s with
           | Atomic (Reg s) -> [ Pseudo (MV { rd = r; rs = s }) ]
-          | Atomic (Imm s) -> [ Pseudo (LI { rd = r; imm = s }) ]
-          | Atomic (Symbol s) -> [ Pseudo (LA { rd = r; symbol = s }) ]
+          | Atomic (Int i) -> [ Pseudo (LI { rd = r; imm = i }) ]
+          | Atomic (Sym s) -> [ Pseudo (LA { rd = r; symbol = s }) ]
           | UnaryOp (NULL, Reg s) -> [ Pseudo (SEQZ { rd = r; rs = s }) ]
-          | UnaryOp (NULL, Imm s) -> [ Pseudo (LI { rd = r; imm = (if s = 0 then 1 else 0) }) ]
-          | UnaryOp (NULL, Symbol s) -> 
-              [ make_assign r (Symbol s); 
+          | UnaryOp (NULL, Int s) -> 
+              [ Pseudo (LI { rd = r; imm = (if s = 0 then 1 else 0) }) ]
+          | UnaryOp (NULL, ((Sym _) as s)) -> 
+              [ make_assign r s; 
                 Pseudo (SEQZ { rd = r; rs = r; }) ]
           | UnaryOp _ -> raise (Invalid_argument "unexpected unary op")
           | BinOp (p, Reg a, Reg b) -> (match p with
@@ -203,31 +205,31 @@ let convert_instr memtbl instr =
                 [ sub; set ]
             | SymbolType.MUL | SymbolType.DIV -> raise Unimpled
             | _ -> raise (Invalid_argument "BinOp"))
-          | BinOp (p, Reg a, Imm b) -> (match p with
-            | SymbolType.ADD -> [ Actual (ADDI { lhs = a; rhs = b; dst = r }) ]
-            | SymbolType.SUB -> [ Actual (ADDI { lhs = a; rhs = -b; dst = r }) ]
+          | BinOp (p, Reg a, Int b) -> (match p with
+            | SymbolType.ADD -> [ Actual (ADDI { lhs = a; rhs = Int b; dst = r }) ]
+            | SymbolType.SUB -> [ Actual (ADDI { lhs = a; rhs = Int (-b); dst = r }) ]
             | SymbolType.EQ ->
-                let xor = Actual (XORI { lhs = a; rhs = b; dst = r }) in
+                let xor = Actual (XORI { lhs = a; rhs = Int b; dst = r }) in
                 let set = Pseudo (SEQZ { rd = r; rs = r }) in
                 [ xor; set ]
             | SymbolType.LESS ->
-                let sub = Actual (ADDI { lhs = a; rhs = -b; dst = r }) in
+                let sub = Actual (ADDI { lhs = a; rhs = Int (-b); dst = r }) in
                 let set = Pseudo (SLTZ { rd = r; rs = r }) in
                 [ sub; set ]
             | SymbolType.MUL | SymbolType.DIV -> raise (Invalid_argument "UNIMPLED")
             | _ -> raise (Invalid_argument "BinOp"))
-          | BinOp (p, Imm a, Reg b) -> (match p with
-            | SymbolType.ADD -> [ Actual (ADDI { lhs = b; rhs = a; dst = r }) ]
+          | BinOp (p, Int a, Reg b) -> (match p with
+            | SymbolType.ADD -> [ Actual (ADDI { lhs = b; rhs = Int a; dst = r }) ]
             | SymbolType.SUB ->
-                let sub = Actual (ADDI { lhs = b; rhs = -a; dst = r }) in
+                let sub = Actual (ADDI { lhs = b; rhs = Int (-a); dst = r }) in
                 let neg = Pseudo (NEG { rd = r; rs = r }) in
                 [ sub; neg ]
             | SymbolType.EQ ->
-                let xor = Actual (XORI { lhs = b; rhs = a; dst = r }) in
+                let xor = Actual (XORI { lhs = b; rhs = Int a; dst = r }) in
                 let set = Pseudo (SEQZ { rd = r; rs = r }) in
                 [ xor; set ]
             | SymbolType.LESS ->
-                let sub = Actual (ADDI { lhs = b; rhs = a; dst = r }) in
+                let sub = Actual (ADDI { lhs = b; rhs = Int a; dst = r }) in
                 let neg = Pseudo (NEG { rd = r; rs = r }) in
                 let set = Pseudo (SLTZ { rd = r; rs = r }) in
                 [ sub; neg; set ]
@@ -242,13 +244,14 @@ let convert_instr memtbl instr =
         let v, vl = recv v in
         assert (List.length vl = 0);
         let p = extract_atomic p in
-        let v = extract_atomic v in
-        let br = match v with
-          | Symbol v -> (match p with
-            | Reg p -> [ Pseudo (BNEZ { rs = p; offset = v }) ]
-            | Imm p -> if p = 0 then [] else [ Pseudo (J { offset = v }) ]
-            | Symbol _ -> raise (Invalid_argument "AAA")  (* FIXME : if constant *) )
-          | _ -> raise (Invalid_argument "AAA")
+        let v = match extract_atomic v with
+          | Sym v -> v
+          | _ -> raise Unimpled
+        in
+        let br = match p with
+          | Reg p -> [ Pseudo (BNEZ { rs = p; offset = v }) ]
+          | Int p -> if p = 0 then [] else [ Pseudo (J { offset = v }) ]
+          | Sym _ -> raise Unimpled
         in
         List.append pl br
     | ThreeAddressCodeType.Jump (j, _) ->
@@ -256,29 +259,53 @@ let convert_instr memtbl instr =
         let j = extract_atomic j in
         let j = match j with
           | Reg j -> [ Pseudo (JR { rs = j; }) ]
-          | Imm _ -> raise Unimpled
-          | Symbol j -> [ Pseudo (J { offset = j; }) ]
+          | Sym j -> [ Pseudo (J { offset = j }) ]
+          | Int _ -> raise Unimpled
         in
         List.append jl j
     | ThreeAddressCodeType.Call (f, _, _) ->
         let f, fl = recv f in
         let f = extract_atomic f in
         let f = match f with
-          | Reg f -> [ Pseudo (CALLR { rs = f }) ]
-          | Imm _ -> raise Unimpled
-          | Symbol f -> [ Pseudo (CALL { offset = f }) ]
+          | Reg f ->
+              (* FIXME *)
+              let tmp = if f = Tmp 0 then Tmp 1 else Tmp 0 in
+              [ Pseudo (MV { rd = Arg 7; rs = Arg 6 });
+                Pseudo (MV { rd = Arg 6; rs = Arg 5 });
+                Pseudo (MV { rd = Arg 5; rs = Arg 4 });
+                Pseudo (MV { rd = Arg 4; rs = Arg 3 });
+                Pseudo (MV { rd = Arg 3; rs = Arg 2 });
+                Pseudo (MV { rd = Arg 2; rs = Arg 1 });
+                Pseudo (MV { rd = Arg 1; rs = Arg 0 });
+                Actual (LW { dst = tmp; base = f; offset = Int 0 });  (* car *)
+                Actual (LW { dst = Arg 0; base = f; offset = Int wsize });  (* closure *)
+                Pseudo (JALR { rs = tmp }); ]
+          | Sym f when f = "allocate" -> [ Pseudo (CALL { offset = f  }) ]
+          | Sym f ->
+              [ Pseudo (MV { rd = Arg 7; rs = Arg 6 });
+                Pseudo (MV { rd = Arg 6; rs = Arg 5 });
+                Pseudo (MV { rd = Arg 5; rs = Arg 4 });
+                Pseudo (MV { rd = Arg 4; rs = Arg 3 });
+                Pseudo (MV { rd = Arg 3; rs = Arg 2 });
+                Pseudo (MV { rd = Arg 2; rs = Arg 1 });
+                Pseudo (MV { rd = Arg 1; rs = Arg 0 });
+                Pseudo (LA { rd = Tmp 0; symbol = f });
+                Actual (LW { dst = Arg 0; base = Tmp 0; offset = Int wsize });
+                Actual (LW { dst = Tmp 0; base = Tmp 0; offset = Int 0 });
+                Pseudo (JALR { rs = Tmp 0 }); ]
+          | Int _ -> raise Unimpled
         in
         List.append fl f
-    | ThreeAddressCodeType.Return _ -> List.append epilog [ Pseudo RET ]
+    | ThreeAddressCodeType.Return _ -> List.append epilogue [ Pseudo RET ]
     | ThreeAddressCodeType.Load (dst, src, offset, _) ->
         let dst = convert_reg dst in
         let src = convert_reg src in
-        let load = LW { base = src; dst; offset } in
+        let load = LW { base = src; dst; offset = Int (wsize * offset) } in
         [ Actual load ]
     | ThreeAddressCodeType.Store (dst, src, offset, _) ->
         let dst = convert_reg dst in
         let src = convert_reg src in
-        let store = SW { base = dst; src; offset } in
+        let store = SW { base = dst; src; offset = Int (wsize * offset) } in
         [ Actual store ]
 
 let convert_func lis =
@@ -300,9 +327,11 @@ let convert_func lis =
         List.append x xs
     | [] -> []
   in
-  lis
-  |> aux
-  |> List.append (List.map bind prolog)
+  let lis = aux lis in
+  let pr = List.map bind (gen_prologue (Hashtbl.length memtbl)) in
+  match lis with
+    | ((Label _) as hd) :: tl -> hd :: (List.append pr tl)
+    | _ -> raise (Invalid_argument "code")
 
 let split_funcs signature seq =
   let is_func s = Hashtbl.mem signature s in
@@ -324,9 +353,21 @@ let split_funcs signature seq =
 let generate program =
   let { signature; ltbl = _; seq }: ThreeAddressCodeType.t = program in
   let funcs = split_funcs signature seq in
-  let aux (_, lis) =
+  let aux (name, lis) =
     let lis = convert_func lis in
-    (Ops (Section Text)) :: lis
+    if name = "entry" then
+      let hd = [
+        (Ops (Section Text));
+        (Ops (Globl (Symbol name)));
+        (Label "entry");
+        (Instr (Pseudo (LI { rd = Arg 0; imm = 65536 })));
+        (Instr (Pseudo (CALL { offset = "malloc" })));
+        (Instr (Pseudo (SG { rd = Arg 0; rt = Tmp 0; symbol = "__free_list" })))
+      ]
+      in
+      List.append hd (List.tl lis)
+    else
+      (Ops (Section Text)) :: (Ops (Globl (Symbol name))) :: lis
   in
   funcs |> List.map aux |> List.flatten
 
@@ -334,26 +375,44 @@ let string_of_reg r = match r with
   | ZERO -> "x0"
   | RA -> "ra"
   | SP -> "sp"
-  | FP -> "fp"
+  | FP -> "s0"
   | Tmp i -> Printf.sprintf "t%d" i
   | Arg i -> Printf.sprintf "a%d" i
   | CalleeSaved i -> Printf.sprintf "s%d" i
 
+let string_of_imm (c: imm_type) =
+  let aux s i =
+    if i = 0 then
+      s
+    else if 0 < i then
+      Printf.sprintf "%s+%d" s i
+    else
+      Printf.sprintf "%s+%db" s (-i)
+  in
+  let string_of_rel l s = Printf.sprintf "%%%s(%s)" l s in
+  match c with
+    | Int i -> string_of_int i
+    | Hi (s, i) -> string_of_rel "hi" (aux s i)
+    | Raw s -> s
+    | Lo (s, i) -> string_of_rel "lo" (aux s i)
+    | PcrelHi (s, i) -> string_of_rel "pcrel_hi" (aux s i)
+    | PcrelLo s -> string_of_rel "pcrel_lo" s
+
 let string_of_branch b =
   let { lhs; rhs; offset } = b in
-  Printf.sprintf "%s,%s,%s" (string_of_reg lhs) (string_of_reg rhs) offset
+  Printf.sprintf "%s,%s,%s" (string_of_reg lhs) (string_of_reg rhs) (string_of_imm offset)
 
 let string_of_load l =
   let { base; dst; offset } = l in
-  Printf.sprintf "%s,%d(%s)" (string_of_reg dst) offset (string_of_reg base)
+  Printf.sprintf "%s,%s(%s)" (string_of_reg dst) (string_of_imm offset) (string_of_reg base)
 
 let string_of_store s =
   let { base; src; offset } = s in
-  Printf.sprintf "%s,%d(%s)" (string_of_reg src) offset (string_of_reg base)
+  Printf.sprintf "%s,%s(%s)" (string_of_reg src) (string_of_imm offset) (string_of_reg base)
 
 let string_of_opimm o =
   let { lhs; rhs; dst }: ActualInstr.op_imm_type = o in
-  Printf.sprintf "%s,%s,%d" (string_of_reg dst) (string_of_reg lhs) rhs
+  Printf.sprintf "%s,%s,%s" (string_of_reg dst) (string_of_reg lhs) (string_of_imm rhs)
 
 let string_of_op o =
   let { lhs; rhs; dst }: ActualInstr.op_type = o in
@@ -362,17 +421,21 @@ let string_of_op o =
 let string_of_line instr args = Printf.sprintf "%s\t\t%s" instr args
 
 let string_of_rs r s = Printf.sprintf "%s,%s" (string_of_reg r) s
+let string_of_rim r c = Printf.sprintf "%s,%s" (string_of_reg r) (string_of_imm c)
 let string_of_rr r1 r2 = Printf.sprintf "%s,%s" (string_of_reg r1) (string_of_reg r2)
 let string_of_rrs r1 r2 s = Printf.sprintf "%s,%s,%s" (string_of_reg r1) (string_of_reg r2) s
-let string_of_ri r i = Printf.sprintf "%s,%d" (string_of_reg r) i
+let string_of_rrim r1 r2 c = 
+  Printf.sprintf "%s,%s,%s" (string_of_reg r1) (string_of_reg r2) (string_of_imm c)
+
+(* FIXME *)
+let sw_instr = if wsize = 8 then "sd" else "sw"
+let lw_instr = if wsize = 8 then "ld" else "lw"
 
 let string_of_actual instr = match instr with
-  | LUI { dst; imm } -> string_of_line "lui" (string_of_ri dst imm)
-  | AUIPC { dst; imm } -> string_of_line "auipc" (string_of_ri dst imm)
-  | JAL { dst; offset } -> string_of_line "jal" (string_of_ri dst offset)
-  | JALR { base; dst; offset } ->
-      let args = Printf.sprintf "%s%s%d" (string_of_reg dst) (string_of_reg base) offset in
-      string_of_line "jalr" args
+  | LUI { dst; imm } -> string_of_line "lui" (string_of_rim dst imm)
+  | AUIPC { dst; imm } -> string_of_line "auipc" (string_of_rim dst imm)
+  | JAL { dst; offset } -> string_of_line "jal" (string_of_rim dst offset)
+  | JALR { base; dst; offset } -> string_of_line "jalr" (string_of_rrim dst base offset)
   | BEQ b -> string_of_line "beq" (string_of_branch b)
   | BNE b -> string_of_line "bne" (string_of_branch b)
   | BLT b -> string_of_line "blt" (string_of_branch b)
@@ -381,12 +444,12 @@ let string_of_actual instr = match instr with
   | BGEU b -> string_of_line "bgeu" (string_of_branch b)
   | LB l -> string_of_line "lb" (string_of_load l)
   | LH l -> string_of_line "lh" (string_of_load l)
-  | LW l -> string_of_line "lw" (string_of_load l)
+  | LW l -> string_of_line lw_instr (string_of_load l)
   | LBU l -> string_of_line "lbu" (string_of_load l)
   | LHU l -> string_of_line "lhu" (string_of_load l)
   | SB s -> string_of_line "sb" (string_of_store s)
   | SH s -> string_of_line "sh" (string_of_store s)
-  | SW s -> string_of_line "sw" (string_of_store s)
+  | SW s -> string_of_line sw_instr (string_of_store s)
   | ADDI o -> string_of_line "addi" (string_of_opimm o)
   | SLTI o -> string_of_line "slti" (string_of_opimm o)
   | SLTIU o -> string_of_line "sltiu" (string_of_opimm o)
@@ -409,8 +472,8 @@ let string_of_actual instr = match instr with
 
 let string_of_pseudo instr = match instr with
   | LA { rd; symbol } -> string_of_line "la" (string_of_rs rd symbol)
-  | LG { rd; symbol } -> string_of_line "lg" (string_of_rs rd symbol)
-  | SG { rd; rt; symbol } -> string_of_line "sg" (string_of_rrs rd rt symbol)
+  | LG { rd; symbol } -> string_of_line lw_instr (string_of_rs rd symbol)
+  | SG { rd; rt; symbol } -> string_of_line sw_instr (Printf.sprintf "%s,%s,%s" (string_of_reg rd) symbol (string_of_reg rt))
   | NOP -> "nop"
   | LI { rd; imm } -> string_of_line "li" (string_of_rs rd (string_of_int imm))
   | MV { rd; rs } -> string_of_line "mv" (string_of_rr rd rs)
@@ -435,17 +498,20 @@ let string_of_pseudo instr = match instr with
   | RET -> "ret"
   | CALL { offset } -> string_of_line "call" offset
   | TAIL { offset } -> string_of_line "tail" offset
-  | CALLR { rs } -> string_of_line "callr" (string_of_reg rs)
-  | TAILR { rs } -> string_of_line "tailr" (string_of_reg rs)
 
 let string_of_instr i = match i with
   | Actual i -> string_of_actual i
   | Pseudo i -> string_of_pseudo i
 
+let string_of_opsvar v = match v with
+  | Symbol "entry" -> "main"
+  | Symbol v -> v
+  | Num v -> Int32.to_string v
+
 let string_of_ops o = match o with
   | File s -> Printf.sprintf ".file .%s" s
-  | Glob s -> Printf.sprintf ".globl .%s" s
-  | Local s -> Printf.sprintf ".local .%s" s
+  | Globl s -> Printf.sprintf ".globl %s" (string_of_opsvar s)
+  | Local s -> Printf.sprintf ".local %s" (string_of_opsvar s)
   | Section s ->
       let s = match s with
         | Text -> "text"
@@ -454,12 +520,15 @@ let string_of_ops o = match o with
         | Bss -> "bss"
       in
       Printf.sprintf ".section .%s" s
+  | Word s -> Printf.sprintf ".dword %s" (string_of_opsvar s)
   | String s -> Printf.sprintf ".string \"%s\"" s
 
 let string_of_assm assm = 
   let aux line = match line with
-    | Instr i -> string_of_instr i
-    | Ops o -> "\t\t" ^ (string_of_ops o)
-    | Label l -> l ^ ":"
+    | Instr i -> "\t" ^ (string_of_instr i)
+    | Ops o -> "\t" ^ (string_of_ops o)
+    | Label l ->
+        let l = if l = "entry" then "main" else l in
+        l ^ ":"
   in
   String.concat "\n" (List.map aux assm)

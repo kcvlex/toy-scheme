@@ -9,3 +9,5 @@ val allocate : (int * int * int) ->
 val allocate_experiment : (int * int * int) -> 
                           ThreeAddressCodeType.t ->
                           ThreeAddressCodeType.t
+
+val set_logging : bool -> unit

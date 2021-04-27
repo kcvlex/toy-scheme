@@ -38,6 +38,12 @@ let get_memreg =
   in
   fn
 
+let output_log_flag = ref false
+
+let set_logging f = output_log_flag := f
+
+let output_log s = if !output_log_flag then print_string s else ()
+
 let is_memreg r = match r with
   | Virtual x when x <= (-2) -> true
   | _ -> false
@@ -124,12 +130,15 @@ let is_precolored alloc n =
   aux alloc.regs.all_regs
 
 let print_instr vec ltbl =
-  print_endline ""; print_endline ""; print_endline "";
-  Hashtbl.iter (fun x y -> Printf.printf "%s ---> %d\n" x y) ltbl;
-  for i = 0 to (Vector.length vec) - 1 do
-    let instr, _ = Vector.get vec i in
-    Printf.printf "%d : %s\n" i (string_of_instr instr) 
-  done
+  if !output_log_flag then begin
+    print_endline ""; print_endline ""; print_endline "";
+    Hashtbl.iter (fun x y -> output_log (Printf.sprintf "%s ---> %d\n" x y)) ltbl;
+    for i = 0 to (Vector.length vec) - 1 do
+      let instr, _ = Vector.get vec i in
+      output_log (Printf.sprintf "%d : %s\n" i (string_of_instr instr)) 
+    done
+  end else
+    ()
 
 (* Build interference graph *)
 let build regs vec ltbl spilled =
@@ -229,7 +238,7 @@ let check_coalesce alloc n1 n2 =
 let exec_coalesce alloc dst src =
   Graph.contraction alloc.intrf_g dst src;
   update_state alloc;
-  Printf.printf "Coalesce : %s %s\n" (string_of_reg dst) (string_of_reg src)
+  output_log (Printf.sprintf "Coalesce : %s %s\n" (string_of_reg dst) (string_of_reg src))
 
 let sort_by_deg alloc set =
   set |> fun s -> Hashtbl.fold (fun x _ l -> (x, Graph.degree alloc.intrf_g x) :: l) s []
@@ -256,7 +265,7 @@ let simplify alloc =
   in
   let rec aux lis update = match lis with
     | (n, d) :: xs when d < reg_sum ->
-        Printf.printf "Remove %s\n" (string_of_reg n);
+        output_log (Printf.sprintf "Remove %s\n" (string_of_reg n));
         rm_node alloc n;
         aux xs true
     | _ -> update
@@ -278,7 +287,7 @@ let pickup_freeze alloc =
     None
   else begin
     let r = List.hd lis in
-    Printf.printf "Freezed %s\n" (string_of_reg r);
+    output_log (Printf.sprintf "Freezed %s\n" (string_of_reg r));
     Some (List.hd lis)
   end
 
@@ -307,7 +316,7 @@ let pickup_spill alloc =
     |> List.hd
     |> fst
   in
-  Printf.printf "Potential spill %s\n" (string_of_reg r);
+  output_log (Printf.sprintf "Potential spill %s\n" (string_of_reg r));
   r
 
 let freeze alloc =
@@ -374,7 +383,7 @@ let init_cmapping alloc =
   { k; coloring }
 
 let assign_color mapping alloc n =
-  Printf.printf "Assign Start %s\n" (string_of_reg n);
+  output_log (Printf.sprintf "Assign Start %s\n" (string_of_reg n));
   let adj =
     let succ = 
       n |> Graph.succ alloc.intrf_g
@@ -413,9 +422,9 @@ let coloring alloc =
     let n = restore_node alloc in
     let res = assign_color cm alloc n in
     if res then
-      Printf.printf "%s was colored to %d\n" (string_of_reg n) (Hashtbl.find cm.coloring n)
+      output_log (Printf.sprintf "%s was colored to %d\n" (string_of_reg n) (Hashtbl.find cm.coloring n))
     else begin
-      Printf.printf "Actual spill %s\n" (string_of_reg n);
+      output_log (Printf.sprintf "Actual spill %s\n" (string_of_reg n));
       Hashtbl.add spilled n ()
     end
   done;
@@ -506,17 +515,6 @@ let rewrite_proc seq spill =
   in
   rewrite 0;
   reset_id new_vec
-
-let dump_colormap cm =
-  Hashtbl.fold (fun x y l -> (x, y) :: l) cm.coloring []
-  |> List.map (fun (x, y) -> Printf.sprintf "[ %s ] ---> %d" (string_of_reg x) y)
-  |> String.concat "\n"
-
-let dump_spilled sp =
-  Hashtbl.fold (fun x _ l -> x :: l) sp []
-  |> List.map string_of_reg
-  |> String.concat " "
-  |> Printf.sprintf "[ %s ]"
 
 let allocate_func_aux vec ltbl regs =
   let cm = ref None in

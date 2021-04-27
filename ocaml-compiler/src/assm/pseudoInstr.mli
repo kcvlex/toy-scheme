@@ -4,7 +4,7 @@ type reg_type = Rv32i.reg_type
 type t =
   | LA of { rd : reg_type; symbol : string; }  (* Load address *)
   | LG of { rd : reg_type; symbol : string; }  (* Load global *)
-  | SG of { rd : reg_type; rt : reg_type; symbol : string; }  (* Store global *)
+  | SG of { rd : reg_type; rt : reg_type; symbol : string; }  (* Store global (symbol) to rd. rt is used (killed) *)
   | NOP
   | LI of { rd : reg_type; imm : int }
   | MV of { rd : reg_type; rs : reg_type }
@@ -29,5 +29,3 @@ type t =
   | RET
   | CALL of { offset : string }
   | TAIL of { offset : string }
-  | CALLR of { rs : reg_type }  (* This is not standard *)
-  | TAILR of { rs : reg_type }  (* This is not standard *)

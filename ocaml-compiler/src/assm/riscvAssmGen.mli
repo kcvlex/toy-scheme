@@ -3,6 +3,8 @@ open RiscvAssm
 
 val generate : ThreeAddressCodeType.t -> t
 
+val string_of_imm : Rv32i.imm_type -> string
+
 val string_of_reg : Rv32i.reg_type -> string
 
 val string_of_pseudo : PseudoInstr.t -> string

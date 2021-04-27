@@ -285,10 +285,20 @@ let from_abs_func (c, args, oarg, body) =
   from_abs_proc var2vreg vec body;
   reset_id vec
 
+let output_program = ref true
+
+let set_logging f = output_program := f
+ 
+let print_program program =
+  if !output_program then
+    print_endline (AbstractMachine.string_of_program program)
+  else
+    ()
+
 let from_abs_program program =
   let ft, jt = program in
   assert (Hashtbl.length jt = 0);
-  print_endline (AbstractMachine.string_of_program program);
+  print_program program;
   let seq, ltbl =
     let labeling name body = match body with
       | (_ as hd, None) :: tl -> (hd, Some name) :: tl
