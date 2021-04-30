@@ -435,7 +435,7 @@ let eval_step machine =
   let { mem; cur } = Stack.pop machine.frames in
   match cur with
     | [] -> raise (Invalid_argument "must return")
-    | hd :: tl -> match hd with
+    | hd :: tl -> (print_endline (string_of_instr "" hd)); match hd with
       | Bind (s, v) ->
           let v = eval_value machine mem v in
           let () = match s with

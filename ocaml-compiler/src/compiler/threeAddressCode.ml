@@ -143,15 +143,17 @@ let call_func vec f args =
   match f with
     | Reg r ->
         aux 1 args;
-        let car = PrimCall (CAR, [ f ]) in
-        let cdr = PrimCall (CDR, [ f ]) in
-        let bind_clsr = Bind (Argument 0, cdr, -1) in
-        let bind_f = Bind (r, car, -1) in
+        (* FIXME : CallerSaved 4, 5 *)
+        let treg = CallerSaved 5 in
         set_sentinel (List.length args + 1);
-        Vector.push_back vec (bind_clsr, None);
-        Vector.push_back vec (bind_f, None);
-        Vector.push_back vec (Call (f, argreg_list 0 (List.length args + 1), -1), None)
-    | Primitive _ | Label _ ->
+        Vector.push_back vec (Move (treg, r, -1), None);
+        Vector.push_back vec (Load (Argument 0, treg, 1, -1), None);
+        Vector.push_back vec (Load (treg, treg, 0, -1), None); 
+        Vector.push_back vec (Call (Reg treg, argreg_list 0 (List.length args + 1), -1), None)
+    | Primitive _ ->
+        aux 0 args;
+        Vector.push_back vec (Call (f, argreg_list 0 (List.length args), -1), None)
+    | Label _ ->
         aux 0 args;
         set_sentinel (List.length args);
         Vector.push_back vec (Call (f, argreg_list 0 (List.length args), -1), None)

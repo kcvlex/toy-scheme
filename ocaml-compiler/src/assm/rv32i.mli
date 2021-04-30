@@ -65,6 +65,8 @@ and ops_type =
   | Section of sec_type
   | String of string
   | Word of var_type
+  | Align of int
+  | Comm of string * int
 and sec_type =
   | Text
   | Data

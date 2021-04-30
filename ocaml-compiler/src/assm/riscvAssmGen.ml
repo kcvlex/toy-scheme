@@ -11,6 +11,7 @@ type psym_type = SymbolType.primitive_sym
 exception Unimpled
 
 let wsize = 8  (* !!!! FIXME !!!! *)
+let wsize_log = 3
 
 type atomic_value_type =
   | Reg of reg_type
@@ -89,6 +90,76 @@ let gen_prologue var_num = [
   Actual (ADDI { dst = SP; lhs = SP; rhs = Int (-1 * wsize * (var_num + 3)) })
 ]
 
+(*
+ * heap :
+ *
+ * |                           |
+ * | dummy                     |
+ * |---------------------------|
+ * | arg_{normal_arg_num}      |  <- arg_{normal_arg_num}
+ * |---------------------------|
+ * | address of (here + wsize) |
+ * |---------------------------|
+ * | ...                       |
+ * |---------------------------|
+ * | arg_n                     |
+ * |---------------------------|
+ * | Nil                       |
+ * |---------------------------|
+ * |                           |
+ *)
+let gen_prologue_ext fname normal_arg_num var_num =
+  let rem = 8 - normal_arg_num in
+  let fin_prologue_label = Printf.sprintf "%s__prologue_fin" fname in
+  let sentinel_num = Int32.min_int |> Int32.to_int in
+  let free_list = "__free_list" in
+  let head = [
+    Actual (SW { src = RA; base = SP; offset =  Int 0 });
+    Actual (SW { src = FP; base = SP; offset =  Int (-1 * wsize) });
+    Actual (SW { src = SP; base = SP; offset =  Int (-1 * wsize * 2) });
+    Pseudo (MV { rd = FP; rs = SP });
+    Actual (ADDI { dst = SP; lhs = SP; rhs = Int (-1 * wsize * (3 + var_num)) });
+  ]
+  in
+  let start = Tmp 0 in
+  let cur = Tmp 1 in
+  let sentinel = Tmp 2 in
+  let allocate = [
+    Pseudo (LI { rd = Tmp 1; imm = rem });
+    Actual (SLLI { dst = Tmp 1; lhs = Tmp 1; rhs = Int wsize_log });
+    Pseudo (LG { rd = start; symbol = free_list });
+    Actual (ADDI { dst = start; lhs = start; rhs = Int wsize });
+    Actual (ADD { dst = Tmp 1; lhs = Tmp 1; rhs = start });
+    Pseudo (SG { rd = Tmp 1; rt = Tmp 2; symbol = free_list });
+    Pseudo (MV { rd = cur; rs = start });
+    Pseudo (LI { rd = sentinel; imm = sentinel_num });
+  ]
+  in
+  let load_arg i = [
+    Actual (BEQ { lhs = sentinel; rhs = Arg i; offset = Raw fin_prologue_label });
+    Actual (SW { src = Arg i; base = cur; offset = Int 0 });
+    Actual (ADDI { dst = Tmp 3; lhs = cur; rhs = Int (wsize * 2) });
+    Actual (SW { src = Tmp 3; base = cur; offset = Int wsize });
+    Actual (ADDI { dst = cur; lhs = cur; rhs = Int (wsize * 2)})
+  ]
+  in
+  let tail = [
+    Actual (SW { src = ZERO; base = cur; offset = Int (-wsize) });
+    Actual (SUB { dst = Tmp 4; lhs = Arg normal_arg_num; rhs = sentinel });
+    Pseudo (SNEZ { rd = Tmp 4; rs = Tmp 4 });
+    Actual (SUB { dst = Tmp 4; lhs = ZERO; rhs = Tmp 4 });
+    Actual (AND { dst = Arg normal_arg_num; lhs = start; rhs = Tmp 4 })
+  ]
+  in
+  let body =
+    let rec aux i = if i = 8 then [] else i :: (aux (i + 1)) in
+    normal_arg_num
+    |> aux
+    |> List.map load_arg
+    |> List.flatten
+  in
+  (List.flatten [ head; allocate; body ], fin_prologue_label, tail)
+
 let epilogue = [
   Actual (LW { dst = RA; base = FP; offset = Int 0 });
   Actual (LW { dst = SP; base = FP; offset = Int (-1 * wsize * 2) });
@@ -128,7 +199,6 @@ and convert_primcall p args =
     assert (List.length al = 0);
     List.map extract_atomic a
   in
-  (* FIXME : convert to clo style *) 
   match p with
     | SymbolType.ADD | SymbolType.SUB | SymbolType.MUL | SymbolType.DIV 
     | SymbolType.EQ | SymbolType.LESS ->
@@ -145,12 +215,12 @@ and convert_primcall p args =
         let a, b = restrict_2arg args in
         let mv1 = make_assign (Arg 0) a in
         let mv2 = make_assign (Arg 1) b in
-        let call = make_call (closure_of_prim p) in
+        let call = make_call (func_of_prim p) in
         (Atomic (Reg (Arg 0)), [ mv1; mv2; call ])
     | SymbolType.CAR | SymbolType.CDR | SymbolType.DISPLAY ->
         let a = restrict_1arg args in
         let mv = make_assign (Arg 0) a in
-        let call = make_call (closure_of_prim p) in
+        let call = make_call (func_of_prim p) in
         (Atomic (Reg (Arg 0)), [ mv; call ])
     | SymbolType.LIST ->
         let rec aux i lis = match lis with
@@ -158,7 +228,7 @@ and convert_primcall p args =
               let x = make_assign (Arg (i + 1)) x in
               let xs = aux (i + 1) xs in
               x :: xs
-          | [] -> [ make_call (closure_of_prim p) ]
+          | [] -> [ make_call (func_of_prim p) ]
         in
         let mv1 = Pseudo (LI { rd = Arg 0; imm = List.length args }) in
         (Atomic (Reg (Arg 0)), mv1 :: (aux 0 args))
@@ -263,36 +333,13 @@ let convert_instr memtbl instr =
           | Int _ -> raise Unimpled
         in
         List.append jl j
+    | ThreeAddressCodeType.Call (Primitive p, _, _) -> [ Pseudo (CALL { offset = func_of_prim p }) ]
     | ThreeAddressCodeType.Call (f, _, _) ->
         let f, fl = recv f in
         let f = extract_atomic f in
         let f = match f with
-          | Reg f ->
-              (* FIXME *)
-              let tmp = if f = Tmp 0 then Tmp 1 else Tmp 0 in
-              [ Pseudo (MV { rd = Arg 7; rs = Arg 6 });
-                Pseudo (MV { rd = Arg 6; rs = Arg 5 });
-                Pseudo (MV { rd = Arg 5; rs = Arg 4 });
-                Pseudo (MV { rd = Arg 4; rs = Arg 3 });
-                Pseudo (MV { rd = Arg 3; rs = Arg 2 });
-                Pseudo (MV { rd = Arg 2; rs = Arg 1 });
-                Pseudo (MV { rd = Arg 1; rs = Arg 0 });
-                Actual (LW { dst = tmp; base = f; offset = Int 0 });  (* car *)
-                Actual (LW { dst = Arg 0; base = f; offset = Int wsize });  (* closure *)
-                Pseudo (JALR { rs = tmp }); ]
-          | Sym f when f = "allocate" -> [ Pseudo (CALL { offset = f  }) ]
-          | Sym f ->
-              [ Pseudo (MV { rd = Arg 7; rs = Arg 6 });
-                Pseudo (MV { rd = Arg 6; rs = Arg 5 });
-                Pseudo (MV { rd = Arg 5; rs = Arg 4 });
-                Pseudo (MV { rd = Arg 4; rs = Arg 3 });
-                Pseudo (MV { rd = Arg 3; rs = Arg 2 });
-                Pseudo (MV { rd = Arg 2; rs = Arg 1 });
-                Pseudo (MV { rd = Arg 1; rs = Arg 0 });
-                Pseudo (LA { rd = Tmp 0; symbol = f });
-                Actual (LW { dst = Arg 0; base = Tmp 0; offset = Int wsize });
-                Actual (LW { dst = Tmp 0; base = Tmp 0; offset = Int 0 });
-                Pseudo (JALR { rs = Tmp 0 }); ]
+          | Reg rs -> [ Pseudo (JALR { rs }); ]
+          | Sym offset -> [ Pseudo (CALL { offset }) ]
           | Int _ -> raise Unimpled
         in
         List.append fl f
@@ -308,7 +355,7 @@ let convert_instr memtbl instr =
         let store = SW { base = dst; src; offset = Int (wsize * offset) } in
         [ Actual store ]
 
-let convert_func lis =
+let convert_func name sg lis =
   let memtbl = mem_mapping lis in
   let bind i = Instr i in
   let rec aux lis = match lis with
@@ -328,7 +375,21 @@ let convert_func lis =
     | [] -> []
   in
   let lis = aux lis in
-  let pr = List.map bind (gen_prologue (Hashtbl.length memtbl)) in
+  let pr = match sg with
+    | (cl, args, Some _) ->
+        let arglen = List.length args in
+        let arglen = arglen + (if Option.is_some cl then 1 else 0) in
+        let head, label, tail = (gen_prologue_ext name arglen (Hashtbl.length memtbl)) in
+        let head = List.map bind head in
+        let tail = List.map bind tail in
+        List.flatten [
+          head;
+          (Label label) :: tail
+        ]
+    | (_, _, None) ->
+        let pr = gen_prologue (Hashtbl.length memtbl) in
+        List.map bind pr
+  in
   match lis with
     | ((Label _) as hd) :: tl -> hd :: (List.append pr tl)
     | _ -> raise (Invalid_argument "code")
@@ -339,7 +400,8 @@ let split_funcs signature seq =
     | hd :: tl -> (match hd with
       | (_, Some l) when is_func l ->
           let cur = hd :: cur in
-          let res = (l, cur) :: res in
+          let sg = Hashtbl.find signature l in
+          let res = (l, sg, cur) :: res in
           let cur = [] in
           aux cur res tl
       | _ -> aux (hd :: cur) res tl)
@@ -353,23 +415,28 @@ let split_funcs signature seq =
 let generate program =
   let { signature; ltbl = _; seq }: ThreeAddressCodeType.t = program in
   let funcs = split_funcs signature seq in
-  let aux (name, lis) =
-    let lis = convert_func lis in
-    if name = "entry" then
-      let hd = [
-        (Ops (Section Text));
-        (Ops (Globl (Symbol name)));
-        (Label "entry");
-        (Instr (Pseudo (LI { rd = Arg 0; imm = 65536 })));
-        (Instr (Pseudo (CALL { offset = "malloc" })));
-        (Instr (Pseudo (SG { rd = Arg 0; rt = Tmp 0; symbol = "__free_list" })))
-      ]
-      in
-      List.append hd (List.tl lis)
-    else
-      (Ops (Section Text)) :: (Ops (Globl (Symbol name))) :: lis
+  let aux (name, sg, lis) =
+    let lis = convert_func name sg lis in
+    (Ops (Section Text)) :: (Ops (Align 2)) :: lis
   in
-  funcs |> List.map aux |> List.flatten
+  let program = funcs |> List.map aux |> List.flatten in
+  let heap_sz = 65536*8 in
+  let main = [
+    Ops (Section Text);
+    Ops (Align 2);
+    Ops (Globl (Symbol "main"));
+    Label "main";
+    Instr (Pseudo (LI { rd = Tmp 0; imm = heap_sz }));
+    Instr (Actual (SUB { dst = SP; lhs = SP; rhs = Tmp 0 }));
+    Instr (Actual (ADDI { dst = Tmp 1; lhs = SP; rhs = Int wsize }));
+    Instr (Pseudo (SG { rd = Tmp 1; rt = Tmp 2; symbol = "__free_list" }));
+    Instr (Pseudo (CALL { offset = "entry" }));
+    Instr (Pseudo (LI { rd = Tmp 0; imm = heap_sz }));
+    Instr (Actual (ADD { dst = SP; lhs = SP; rhs = Tmp 0 }));
+    Instr (Pseudo RET)
+  ]
+  in
+  List.append main program
 
 let string_of_reg r = match r with
   | ZERO -> "x0"
@@ -504,7 +571,6 @@ let string_of_instr i = match i with
   | Pseudo i -> string_of_pseudo i
 
 let string_of_opsvar v = match v with
-  | Symbol "entry" -> "main"
   | Symbol v -> v
   | Num v -> Int32.to_string v
 
@@ -522,13 +588,13 @@ let string_of_ops o = match o with
       Printf.sprintf ".section .%s" s
   | Word s -> Printf.sprintf ".dword %s" (string_of_opsvar s)
   | String s -> Printf.sprintf ".string \"%s\"" s
+  | Align i -> Printf.sprintf ".align %d" i
+  | Comm (s, i) -> Printf.sprintf ".comm %s,%d" s i
 
 let string_of_assm assm = 
   let aux line = match line with
     | Instr i -> "\t" ^ (string_of_instr i)
     | Ops o -> "\t" ^ (string_of_ops o)
-    | Label l ->
-        let l = if l = "entry" then "main" else l in
-        l ^ ":"
+    | Label l -> l ^ ":"
   in
   String.concat "\n" (List.map aux assm)
