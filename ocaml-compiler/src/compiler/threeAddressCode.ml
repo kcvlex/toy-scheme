@@ -142,14 +142,17 @@ let call_func vec f args =
   in
   match f with
     | Reg r ->
+        let reg1 = SlotNumber.fresh vreg_slot in
+        let reg2 = SlotNumber.fresh vreg_slot in
+        Vector.push_back vec (Move (reg2, r, -1), None);
+        Vector.push_back vec (Move (Argument 0, reg2, -1), None);
+        Vector.push_back vec (Bind (reg1, PrimCall (CAR, [ Reg (Argument 0) ]), -1), None);
+        Vector.push_back vec (Move (Argument 0, reg2, -1), None);
+        Vector.push_back vec (Bind (reg2, PrimCall (CDR, [ Reg (Argument 0) ]), -1), None);
         aux 1 args;
-        (* FIXME : CallerSaved 4, 5 *)
-        let treg = CallerSaved 5 in
         set_sentinel (List.length args + 1);
-        Vector.push_back vec (Move (treg, r, -1), None);
-        Vector.push_back vec (Load (Argument 0, treg, 1, -1), None);
-        Vector.push_back vec (Load (treg, treg, 0, -1), None); 
-        Vector.push_back vec (Call (Reg treg, argreg_list 0 (List.length args + 1), -1), None)
+        Vector.push_back vec (Move (Argument 0, reg2, -1), None);
+        Vector.push_back vec (Call (Reg reg1, argreg_list 0 (List.length args + 1), -1), None)
     | Primitive _ ->
         aux 0 args;
         Vector.push_back vec (Call (f, argreg_list 0 (List.length args), -1), None)

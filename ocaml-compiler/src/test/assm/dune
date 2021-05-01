@@ -1,0 +1,7 @@
+(tests
+  (libraries compiler assm testtool)
+  (names testRiscvAssm
+         testSimulator))
+(env
+  (dev
+    (flags (:standard -warn-error -A))))

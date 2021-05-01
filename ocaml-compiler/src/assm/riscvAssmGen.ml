@@ -426,13 +426,19 @@ let generate program =
     Ops (Align 2);
     Ops (Globl (Symbol "main"));
     Label "main";
+    Instr (Actual (SW { src = RA; base = SP; offset =  Int 0 }));
+    Instr (Actual (SW { src = FP; base = SP; offset =  Int (-1 * wsize) }));
+    Instr (Actual (SW { src = SP; base = SP; offset =  Int (-1 * wsize * 2) }));
+    Instr (Pseudo (MV { rd = FP; rs = SP }));
     Instr (Pseudo (LI { rd = Tmp 0; imm = heap_sz }));
     Instr (Actual (SUB { dst = SP; lhs = SP; rhs = Tmp 0 }));
     Instr (Actual (ADDI { dst = Tmp 1; lhs = SP; rhs = Int wsize }));
     Instr (Pseudo (SG { rd = Tmp 1; rt = Tmp 2; symbol = "__free_list" }));
     Instr (Pseudo (CALL { offset = "entry" }));
-    Instr (Pseudo (LI { rd = Tmp 0; imm = heap_sz }));
-    Instr (Actual (ADD { dst = SP; lhs = SP; rhs = Tmp 0 }));
+    Instr (Actual (LW { dst = RA; base = FP; offset = Int 0 }));
+    Instr (Actual (LW { dst = SP; base = FP; offset = Int (-1 * wsize * 2) }));
+    Instr (Actual (LW { dst = FP; base = FP; offset = Int (-1 * wsize * 1) }));
+    Instr (Actual (XOR { dst = Arg 0; lhs = Arg 0; rhs = Arg 0 }));
     Instr (Pseudo RET)
   ]
   in

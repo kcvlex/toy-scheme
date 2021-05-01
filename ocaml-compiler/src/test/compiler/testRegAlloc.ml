@@ -87,6 +87,7 @@ let print_machine machine =
           |> print_endline
 
 let () =
+  RegAlloc.set_logging true;
   let reg_num = (0, 1, 2) in
   let allocated = RegAlloc.allocate_experiment reg_num ThreeAddressCode.sample2 in
   let () =

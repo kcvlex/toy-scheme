@@ -7,6 +7,7 @@ exception Unimpled
 (* FIXME *)
 let wsize = 8
 let wsize_log = 3
+let sentinel_num = Int32.min_int |> Int32.to_int
 
 let actual i = Instr (Actual i)
 
@@ -201,6 +202,7 @@ let apply =
   let c = closure_of_prim APPLY in
   let cl = closure_func_of_prim APPLY in
   let apply_fin = "__apply_fin" in
+  let has_arg = "__apply_has_arg" in
   let entry = [
     Ops (Section Rodata);
     Label c;
@@ -210,6 +212,10 @@ let apply =
     Label l;
     actual (LW { dst = Tmp 0; base = Arg 0; offset = Int 0 });
     actual (LW { dst = Arg 0; base = Arg 0; offset = Int wsize });
+    pseudo (LI { rd = Tmp 1; imm = sentinel_num });
+    actual (BNE { lhs = Tmp 1; rhs = Arg 1; offset = Raw has_arg });
+    pseudo (JR { rs = Tmp 0 });
+    Label has_arg;
     pseudo (MV { rd = Tmp 1; rs = Arg 1; });
   ]
   in
@@ -217,7 +223,6 @@ let apply =
     actual (LW { dst = Arg (i + 1); base = Tmp 1; offset = Int 0 });  (* car *)
     actual (LW { dst = Tmp 1; base = Tmp 1; offset = Int wsize });
     pseudo (BEQZ { rs = Tmp 1; offset = apply_fin });
-    actual (LW { dst = Tmp 1; base = Tmp 1; offset = Int 0 });
   ]
   in
   let fin = [

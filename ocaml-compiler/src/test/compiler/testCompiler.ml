@@ -82,14 +82,15 @@ let string_of_proc seq =
       |> List.map (fun (x, y) -> (ThreeAddressCode.string_of_instr x, string_of_label y))
       |> List.map (fun (x, y) -> y ^ x)
 
-let print_machine machine = 
+let print_machine machine =
   machine |> AbstractMachine.string_of_machine 
           |> print_endline
 
 let () =
-  let reg_num = (3, 3, 7) in
+  RegAlloc.set_logging true;
+  let reg_num = (7, 11, 8) in
   let allocated =
-    TestUtil.source3 
+    TestUtil.source3
     |> Ast.make_ast
     |> Ast.normalize
     |> Cps.cps_trans
