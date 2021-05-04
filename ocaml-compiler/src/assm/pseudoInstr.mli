@@ -1,4 +1,4 @@
-type reg_type = Rv32i.reg_type
+type reg_type = Riscv.reg_type
 
 (* https://github.com/riscv/riscv-asm-manual/blob/master/riscv-asm.md *)
 type t =

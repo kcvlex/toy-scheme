@@ -1,18 +1,28 @@
-open Rv32i
+open Riscv
 open RiscvAssm
 open Compiler
 
 exception Unimpled
 
-(* FIXME *)
-let wsize = 8
-let wsize_log = 3
-let sentinel_num = Int32.min_int |> Int32.to_int
+let ctx = {
+  arch = RV32I;
+  build = Simulate;
+  wsize = -1;
+  wsize_log = -1;
+  sentinel_num = 0;
+}
+
+let assign_ctx c =
+  ctx.arch <- c.arch;
+  ctx.build <- c.build;
+  ctx.wsize <- c.wsize;
+  ctx.wsize_log <- c.wsize_log;
+  ctx.sentinel_num <- c.sentinel_num
 
 let actual i = Instr (Actual i)
 
 let pseudo i = Instr (Pseudo i)
-  
+ 
 let func_of_prim (p: SymbolType.primitive_sym) = match p with
   | ADD     -> "__add"
   | SUB     -> "__sub"
@@ -37,7 +47,7 @@ let iota n =
   
 let upper = 8  (* FIXME *)
 
-let add =
+let add () =
   let l = func_of_prim ADD in
   let c = closure_of_prim ADD in
   let cl = closure_func_of_prim ADD in
@@ -53,7 +63,7 @@ let add =
     actual (ADD { dst = Arg 0; lhs = Arg 1; rhs = Arg 2; });
     pseudo RET ]
 
-let sub =
+let sub () =
   let l = func_of_prim SUB in
   let c = closure_of_prim SUB in
   let cl = closure_func_of_prim SUB in
@@ -69,7 +79,7 @@ let sub =
     actual (SUB { dst = Arg 0; lhs = Arg 1; rhs = Arg 2 });
     pseudo RET ]
 
-let eq =
+let eq () =
   let l = func_of_prim EQ in
   let c = closure_of_prim EQ in
   let cl = closure_func_of_prim EQ in
@@ -87,7 +97,7 @@ let eq =
     pseudo (SEQZ { rd = Arg 0; rs = Arg 0 });
     pseudo RET ]
 
-let less =
+let less () =
   let l = func_of_prim LESS in
   let c = closure_of_prim LESS in
   let cl = closure_func_of_prim LESS in
@@ -105,7 +115,7 @@ let less =
     pseudo (SLTZ { rd = Arg 0; rs = Arg 0 });
     pseudo RET ]
 
-let null = 
+let null () = 
   let l = func_of_prim NULL in
   let c = closure_of_prim NULL in
   let cl = closure_func_of_prim NULL in
@@ -121,7 +131,7 @@ let null =
     pseudo (SEQZ { rd = Arg 0; rs = Arg 1 });
     pseudo RET ]
 
-let cons =
+let cons () =
   let l = func_of_prim CONS in
   let c = closure_of_prim CONS in
   let cl = closure_func_of_prim CONS in
@@ -139,7 +149,7 @@ let cons =
     pseudo (LI { rd = Arg 0; imm = 2 });
     pseudo (TAIL { offset = "allocate" }) ]
 
-let car =
+let car () =
   let l = func_of_prim CAR in
   let c = closure_of_prim CAR in
   let cl = closure_func_of_prim CAR in
@@ -155,7 +165,7 @@ let car =
     actual (LW { dst = Arg 0; base = Arg 1; offset = Int 0 });
     pseudo RET ]
 
-let cdr =
+let cdr () =
   let l = func_of_prim CDR in
   let c = closure_of_prim CDR in
   let cl = closure_func_of_prim CDR in
@@ -165,13 +175,13 @@ let cdr =
     Ops (Word (Num Int32.zero));
     Ops (Section Text);
     Label l;
-    actual (LW { dst = Arg 0; base = Arg 0; offset = Int wsize });
+    actual (LW { dst = Arg 0; base = Arg 0; offset = Int ctx.wsize });
     pseudo RET;
     Label cl;
-    actual (LW { dst = Arg 0; base = Arg 1; offset = Int wsize });
+    actual (LW { dst = Arg 0; base = Arg 1; offset = Int ctx.wsize });
     pseudo RET ]
 
-let list_ref = 
+let list_ref () = 
   let l = func_of_prim LISTREF in
   let c = closure_of_prim LISTREF in
   let cl = closure_func_of_prim LISTREF in
@@ -186,7 +196,7 @@ let list_ref =
     actual (LW { dst = Arg 0; base = Arg 0; offset = Int 0 });
     pseudo RET;
     Label label;
-    actual (LW { dst = Arg 0; base = Arg 0; offset = Int wsize });
+    actual (LW { dst = Arg 0; base = Arg 0; offset = Int ctx.wsize });
     actual (ADDI { dst = Arg 1; lhs = Arg 1; rhs = Int (-1) });
     pseudo (J { offset = l });
     Label cl;
@@ -197,7 +207,7 @@ let list_ref =
 (*
  * FIXME : when args = nil
  *)
-let apply =
+let apply () =
   let l = func_of_prim APPLY in
   let c = closure_of_prim APPLY in
   let cl = closure_func_of_prim APPLY in
@@ -211,8 +221,8 @@ let apply =
     Ops (Section Text);
     Label l;
     actual (LW { dst = Tmp 0; base = Arg 0; offset = Int 0 });
-    actual (LW { dst = Arg 0; base = Arg 0; offset = Int wsize });
-    pseudo (LI { rd = Tmp 1; imm = sentinel_num });
+    actual (LW { dst = Arg 0; base = Arg 0; offset = Int ctx.wsize });
+    pseudo (LI { rd = Tmp 1; imm = ctx.sentinel_num });
     actual (BNE { lhs = Tmp 1; rhs = Arg 1; offset = Raw has_arg });
     pseudo (JR { rs = Tmp 0 });
     Label has_arg;
@@ -221,7 +231,7 @@ let apply =
   in
   let assign_arg i = [
     actual (LW { dst = Arg (i + 1); base = Tmp 1; offset = Int 0 });  (* car *)
-    actual (LW { dst = Tmp 1; base = Tmp 1; offset = Int wsize });
+    actual (LW { dst = Tmp 1; base = Tmp 1; offset = Int ctx.wsize });
     pseudo (BEQZ { rs = Tmp 1; offset = apply_fin });
   ]
   in
@@ -241,11 +251,15 @@ let apply =
       pseudo (TAIL { offset = l }) ]
   ]
 
-let display =
+let display () =
   let l = func_of_prim DISPLAY in
   let c = closure_of_prim DISPLAY in
   let cl = closure_func_of_prim DISPLAY in
   let format_s = "__display_format" in
+  let print = match ctx.build with
+    | Simulate -> pseudo (TAIL { offset = "printf" })
+    | FPGA -> actual (JAL { dst = ZERO; offset = Int 4 })  (* FIXME *)
+  in
   [ Ops (Section Rodata);
     Label format_s;
     Ops (String "%d\\n");
@@ -256,22 +270,22 @@ let display =
     Label l;
     pseudo (MV { rd = Arg 1; rs = Arg 0 });
     pseudo (LA { rd = Arg 0; symbol = format_s });
-    pseudo (TAIL { offset = "printf" });
+    print;
     Label cl;
     pseudo (MV { rd = Arg 0; rs = Arg 1 });
     pseudo (TAIL { offset = l }) ]
 
-let allocate =
+let allocate () =
   let free_list = "__free_list" in
   let br = "__branch_allocate" in
   let entry = [
-    Ops (Comm (free_list, wsize));
+    Ops (Comm (free_list, ctx.wsize));
     Ops (Section Text);
     Label "allocate";
     pseudo (BNEZ { rs = Arg 0; offset = br });
     pseudo RET;
     Label br;
-    actual (SLLI { dst = Tmp 0; lhs = Arg 0; rhs = Int wsize_log });
+    actual (SLLI { dst = Tmp 0; lhs = Arg 0; rhs = Int ctx.wsize_log });
     pseudo (LG { rd = Arg 0; symbol = free_list });
     actual (ADD { dst = Tmp 1; lhs = Arg 0; rhs = Tmp 0 });
     pseudo (SG { rd = Tmp 1; rt = Tmp 2; symbol = free_list });
@@ -279,7 +293,7 @@ let allocate =
   in
   (* FIXME *)
   let assign i = [
-    actual (SW { src = Arg (i + 1); base = Arg 0; offset = Int (i * wsize) })
+    actual (SW { src = Arg (i + 1); base = Arg 0; offset = Int (i * ctx.wsize) })
   ]
   in
   List.flatten [
@@ -289,18 +303,20 @@ let allocate =
   ]
 
 
-let lib = List.flatten [
-  [ Ops (Align 2) ];
-  add;
-  sub;
-  eq;
-  less;
-  null;
-  cons;
-  car;
-  cdr;
-  list_ref;
-  apply;
-  display;
-  allocate
-]
+let lib ctx_arg =
+  assign_ctx ctx_arg;
+  List.flatten [
+    [ Ops (Align 2) ];
+    add ();
+    sub ();
+    eq ();
+    less ();
+    null ();
+    cons ();
+    car ();
+    cdr ();
+    list_ref ();
+    apply ();
+    display ();
+    allocate ()
+  ]

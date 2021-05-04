@@ -1,6 +1,6 @@
 open Util
 open Compiler
-open Rv32i
+open Riscv
 open RiscvAssm
 open PseudoInstr
 open ActualInstr
@@ -10,8 +10,28 @@ type psym_type = SymbolType.primitive_sym
 
 exception Unimpled
 
-let wsize = 8  (* !!!! FIXME !!!! *)
-let wsize_log = 3
+let ctx = {
+  arch = RV32I;
+  build = Simulate;
+  wsize = -1;
+  wsize_log = -1;
+  sentinel_num = 0;
+}
+
+let make_ctx arch build =
+  let wsize = match arch with
+    | RV32I -> 4
+    | RV64I -> 8
+  in
+  let wsize_log = match arch with
+    | RV32I -> 2
+    | RV64I -> 3
+  in
+  ctx.arch <- arch;
+  ctx.build <- build;
+  ctx.wsize <- wsize;
+  ctx.wsize_log <- wsize_log;
+  ctx.sentinel_num <- (Int32.min_int |> Int32.to_int)
 
 type atomic_value_type =
   | Reg of reg_type
@@ -50,7 +70,7 @@ let mem_mapping seq =
       ()
     else begin
       let id = Hashtbl.length tbl + 3 in
-      let id = (-wsize) * id in
+      let id = (-ctx.wsize) * id in
       Hashtbl.add tbl s id;
     end
   in
@@ -84,10 +104,10 @@ let mem_mapping seq =
 
 let gen_prologue var_num = [
   Actual (SW { src = RA; base = SP; offset =  Int 0 });
-  Actual (SW { src = FP; base = SP; offset =  Int (-1 * wsize) });
-  Actual (SW { src = SP; base = SP; offset =  Int (-1 * wsize * 2) });
+  Actual (SW { src = FP; base = SP; offset =  Int (-1 * ctx.wsize) });
+  Actual (SW { src = SP; base = SP; offset =  Int (-1 * ctx.wsize * 2) });
   Pseudo (MV { rd = FP; rs = SP });
-  Actual (ADDI { dst = SP; lhs = SP; rhs = Int (-1 * wsize * (var_num + 3)) })
+  Actual (ADDI { dst = SP; lhs = SP; rhs = Int (-1 * ctx.wsize * (var_num + 3)) })
 ]
 
 (*
@@ -115,10 +135,10 @@ let gen_prologue_ext fname normal_arg_num var_num =
   let free_list = "__free_list" in
   let head = [
     Actual (SW { src = RA; base = SP; offset =  Int 0 });
-    Actual (SW { src = FP; base = SP; offset =  Int (-1 * wsize) });
-    Actual (SW { src = SP; base = SP; offset =  Int (-1 * wsize * 2) });
+    Actual (SW { src = FP; base = SP; offset =  Int (-1 * ctx.wsize) });
+    Actual (SW { src = SP; base = SP; offset =  Int (-1 * ctx.wsize * 2) });
     Pseudo (MV { rd = FP; rs = SP });
-    Actual (ADDI { dst = SP; lhs = SP; rhs = Int (-1 * wsize * (3 + var_num)) });
+    Actual (ADDI { dst = SP; lhs = SP; rhs = Int (-1 * ctx.wsize * (3 + var_num)) });
   ]
   in
   let start = Tmp 0 in
@@ -126,9 +146,9 @@ let gen_prologue_ext fname normal_arg_num var_num =
   let sentinel = Tmp 2 in
   let allocate = [
     Pseudo (LI { rd = Tmp 1; imm = rem });
-    Actual (SLLI { dst = Tmp 1; lhs = Tmp 1; rhs = Int wsize_log });
+    Actual (SLLI { dst = Tmp 1; lhs = Tmp 1; rhs = Int ctx.wsize_log });
     Pseudo (LG { rd = start; symbol = free_list });
-    Actual (ADDI { dst = start; lhs = start; rhs = Int wsize });
+    Actual (ADDI { dst = start; lhs = start; rhs = Int ctx.wsize });
     Actual (ADD { dst = Tmp 1; lhs = Tmp 1; rhs = start });
     Pseudo (SG { rd = Tmp 1; rt = Tmp 2; symbol = free_list });
     Pseudo (MV { rd = cur; rs = start });
@@ -138,13 +158,13 @@ let gen_prologue_ext fname normal_arg_num var_num =
   let load_arg i = [
     Actual (BEQ { lhs = sentinel; rhs = Arg i; offset = Raw fin_prologue_label });
     Actual (SW { src = Arg i; base = cur; offset = Int 0 });
-    Actual (ADDI { dst = Tmp 3; lhs = cur; rhs = Int (wsize * 2) });
-    Actual (SW { src = Tmp 3; base = cur; offset = Int wsize });
-    Actual (ADDI { dst = cur; lhs = cur; rhs = Int (wsize * 2)})
+    Actual (ADDI { dst = Tmp 3; lhs = cur; rhs = Int (ctx.wsize * 2) });
+    Actual (SW { src = Tmp 3; base = cur; offset = Int ctx.wsize });
+    Actual (ADDI { dst = cur; lhs = cur; rhs = Int (ctx.wsize * 2)})
   ]
   in
   let tail = [
-    Actual (SW { src = ZERO; base = cur; offset = Int (-wsize) });
+    Actual (SW { src = ZERO; base = cur; offset = Int (-ctx.wsize) });
     Actual (SUB { dst = Tmp 4; lhs = Arg normal_arg_num; rhs = sentinel });
     Pseudo (SNEZ { rd = Tmp 4; rs = Tmp 4 });
     Actual (SUB { dst = Tmp 4; lhs = ZERO; rhs = Tmp 4 });
@@ -160,10 +180,10 @@ let gen_prologue_ext fname normal_arg_num var_num =
   in
   (List.flatten [ head; allocate; body ], fin_prologue_label, tail)
 
-let epilogue = [
+let gen_epilogue () = [
   Actual (LW { dst = RA; base = FP; offset = Int 0 });
-  Actual (LW { dst = SP; base = FP; offset = Int (-1 * wsize * 2) });
-  Actual (LW { dst = FP; base = FP; offset = Int (-1 * wsize * 1) });
+  Actual (LW { dst = SP; base = FP; offset = Int (-1 * ctx.wsize * 2) });
+  Actual (LW { dst = FP; base = FP; offset = Int (-1 * ctx.wsize * 1) });
 ]
 
 (* Convert *)
@@ -237,12 +257,12 @@ let convert_instr memtbl instr =
   let recv v = convert_value v in
   let gen_load dst base =
     let dst = convert_reg dst in
-    let offset = Rv32i.Int (Hashtbl.find memtbl base) in
+    let offset = Riscv.Int (Hashtbl.find memtbl base) in
     LW { dst; base = FP; offset }
   in
   let gen_store base src =
     let src = convert_reg src in
-    let offset = Rv32i.Int (Hashtbl.find memtbl base) in
+    let offset = Riscv.Int (Hashtbl.find memtbl base) in
     SW { base = FP; src; offset }
   in
   match instr with
@@ -343,16 +363,16 @@ let convert_instr memtbl instr =
           | Int _ -> raise Unimpled
         in
         List.append fl f
-    | ThreeAddressCodeType.Return _ -> List.append epilogue [ Pseudo RET ]
+    | ThreeAddressCodeType.Return _ -> List.append (gen_epilogue ()) [ Pseudo RET ]
     | ThreeAddressCodeType.Load (dst, src, offset, _) ->
         let dst = convert_reg dst in
         let src = convert_reg src in
-        let load = LW { base = src; dst; offset = Int (wsize * offset) } in
+        let load = LW { base = src; dst; offset = Int (ctx.wsize * offset) } in
         [ Actual load ]
     | ThreeAddressCodeType.Store (dst, src, offset, _) ->
         let dst = convert_reg dst in
         let src = convert_reg src in
-        let store = SW { base = dst; src; offset = Int (wsize * offset) } in
+        let store = SW { base = dst; src; offset = Int (ctx.wsize * offset) } in
         [ Actual store ]
 
 let convert_func name sg lis =
@@ -412,7 +432,8 @@ let split_funcs signature seq =
   |> List.rev
   |> aux [] []
 
-let generate program =
+let generate arch build program =
+  make_ctx arch build;
   let { signature; ltbl = _; seq }: ThreeAddressCodeType.t = program in
   let funcs = split_funcs signature seq in
   let aux (name, sg, lis) =
@@ -427,22 +448,26 @@ let generate program =
     Ops (Globl (Symbol "main"));
     Label "main";
     Instr (Actual (SW { src = RA; base = SP; offset =  Int 0 }));
-    Instr (Actual (SW { src = FP; base = SP; offset =  Int (-1 * wsize) }));
-    Instr (Actual (SW { src = SP; base = SP; offset =  Int (-1 * wsize * 2) }));
+    Instr (Actual (SW { src = FP; base = SP; offset =  Int (-1 * ctx.wsize) }));
+    Instr (Actual (SW { src = SP; base = SP; offset =  Int (-1 * ctx.wsize * 2) }));
     Instr (Pseudo (MV { rd = FP; rs = SP }));
     Instr (Pseudo (LI { rd = Tmp 0; imm = heap_sz }));
     Instr (Actual (SUB { dst = SP; lhs = SP; rhs = Tmp 0 }));
-    Instr (Actual (ADDI { dst = Tmp 1; lhs = SP; rhs = Int wsize }));
+    Instr (Actual (ADDI { dst = Tmp 1; lhs = SP; rhs = Int ctx.wsize }));
     Instr (Pseudo (SG { rd = Tmp 1; rt = Tmp 2; symbol = "__free_list" }));
     Instr (Pseudo (CALL { offset = "entry" }));
     Instr (Actual (LW { dst = RA; base = FP; offset = Int 0 }));
-    Instr (Actual (LW { dst = SP; base = FP; offset = Int (-1 * wsize * 2) }));
-    Instr (Actual (LW { dst = FP; base = FP; offset = Int (-1 * wsize * 1) }));
+    Instr (Actual (LW { dst = SP; base = FP; offset = Int (-1 * ctx.wsize * 2) }));
+    Instr (Actual (LW { dst = FP; base = FP; offset = Int (-1 * ctx.wsize * 1) }));
     Instr (Actual (XOR { dst = Arg 0; lhs = Arg 0; rhs = Arg 0 }));
     Instr (Pseudo RET)
   ]
   in
   List.append main program
+
+let link_builtin program =
+  let lib = Builtin.lib ctx in
+  List.append lib program
 
 let string_of_reg r = match r with
   | ZERO -> "x0"
@@ -501,8 +526,8 @@ let string_of_rrim r1 r2 c =
   Printf.sprintf "%s,%s,%s" (string_of_reg r1) (string_of_reg r2) (string_of_imm c)
 
 (* FIXME *)
-let sw_instr = if wsize = 8 then "sd" else "sw"
-let lw_instr = if wsize = 8 then "ld" else "lw"
+let sw_instr () = if ctx.wsize = 8 then "sd" else "sw"
+let lw_instr () = if ctx.wsize = 8 then "ld" else "lw"
 
 let string_of_actual instr = match instr with
   | LUI { dst; imm } -> string_of_line "lui" (string_of_rim dst imm)
@@ -517,12 +542,12 @@ let string_of_actual instr = match instr with
   | BGEU b -> string_of_line "bgeu" (string_of_branch b)
   | LB l -> string_of_line "lb" (string_of_load l)
   | LH l -> string_of_line "lh" (string_of_load l)
-  | LW l -> string_of_line lw_instr (string_of_load l)
+  | LW l -> string_of_line (lw_instr ()) (string_of_load l)
   | LBU l -> string_of_line "lbu" (string_of_load l)
   | LHU l -> string_of_line "lhu" (string_of_load l)
   | SB s -> string_of_line "sb" (string_of_store s)
   | SH s -> string_of_line "sh" (string_of_store s)
-  | SW s -> string_of_line sw_instr (string_of_store s)
+  | SW s -> string_of_line (sw_instr ()) (string_of_store s)
   | ADDI o -> string_of_line "addi" (string_of_opimm o)
   | SLTI o -> string_of_line "slti" (string_of_opimm o)
   | SLTIU o -> string_of_line "sltiu" (string_of_opimm o)
@@ -545,8 +570,8 @@ let string_of_actual instr = match instr with
 
 let string_of_pseudo instr = match instr with
   | LA { rd; symbol } -> string_of_line "la" (string_of_rs rd symbol)
-  | LG { rd; symbol } -> string_of_line lw_instr (string_of_rs rd symbol)
-  | SG { rd; rt; symbol } -> string_of_line sw_instr (Printf.sprintf "%s,%s,%s" (string_of_reg rd) symbol (string_of_reg rt))
+  | LG { rd; symbol } -> string_of_line (lw_instr ()) (string_of_rs rd symbol)
+  | SG { rd; rt; symbol } -> string_of_line (sw_instr ()) (Printf.sprintf "%s,%s,%s" (string_of_reg rd) symbol (string_of_reg rt))
   | NOP -> "nop"
   | LI { rd; imm } -> string_of_line "li" (string_of_rs rd (string_of_int imm))
   | MV { rd; rs } -> string_of_line "mv" (string_of_rr rd rs)

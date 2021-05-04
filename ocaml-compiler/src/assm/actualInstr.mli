@@ -1,5 +1,5 @@
-type reg_type = Rv32i.reg_type
-type imm_type = Rv32i.imm_type
+type reg_type = Riscv.reg_type
+type imm_type = Riscv.imm_type
 
 type branch_type = { lhs : reg_type; rhs : reg_type; offset : imm_type; }
 type load_type = { base : reg_type; dst : reg_type; offset : imm_type; }

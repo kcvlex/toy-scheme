@@ -55,6 +55,14 @@ type j_type = {
   opcode : int;
 }
 
+type arch_type =
+  | RV32I
+  | RV64I
+
+type build_type =
+  | Simulate
+  | FPGA
+
 type var_type =
   | Symbol of string
   | Num of Int32.t

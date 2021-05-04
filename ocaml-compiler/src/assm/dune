@@ -3,7 +3,7 @@
   (modules_without_implementation riscvAssm
                                   pseudoInstr
                                   actualInstr
-                                  rv32i)
+                                  riscv)
   (name assm))
 
 (env
