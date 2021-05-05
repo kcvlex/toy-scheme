@@ -10,13 +10,15 @@ module REGFILE(
     always @(posedge RST_X) begin
         x[0] <= #1 0;
         x[1] <= #1 0;  // return address(link register)
-        x[2] <= #1 65535 << 2;  // stack pointer
-        x[8] <= #1 0;  // base pointer
+        x[2] <= #1 (32'hff00 - 1) << 2;  // stack pointer
+        x[8] <= #1 (32'hff00 - 1) << 2;  // base pointer
     end
 
-    always @(negedge CLK) if (RST_X && we && rd != 0) x[rd] <= #1 wd;
+    always @(negedge CLK) if (RST_X && we && rd != 0) begin
+        x[rd] <= #1 wd;
+        // $write("x[%d] <= %x\n", rd, wd);
+    end
 
     assign #1 rrs1 = (RST_X ? x[rs1] : 32'h0);
     assign #1 rrs2 = (RST_X ? x[rs2] : 32'h0);
-    // assign #1 a0 = (RST_X ? x[5'd10] : 32'h0);  // return value
 endmodule

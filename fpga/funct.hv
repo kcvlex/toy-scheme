@@ -45,6 +45,10 @@ localparam FUNCT7_SUB = 7'b01_00000;
 localparam FUNCT7_SRL = 7'b00_00000;
 localparam FUNCT7_SRA = 7'b01_00000;
 
-
 /* Compare */
-
+localparam FUNCT3_EQ = 3'b000;
+localparam FUNCT3_NEQ = 3'b001;
+localparam FUNCT3_LT = 3'b100;
+localparam FUNCT3_GE = 3'b101;
+localparam FUNCT3_LTU = 3'b110;
+localparam FUNCT3_GEU = 3'b111;

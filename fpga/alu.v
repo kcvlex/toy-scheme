@@ -11,26 +11,27 @@ module ALU(
     reg [31:0] r_res;
 
     always @(RST_X, op, lhs, rhs) begin
-        if (!RST_X) begin
-            r_res <= #1 0;
-        end else begin
-            case (op)
-                ADD:  r_res <= #1 lhs + rhs;
-                SUB:  r_res <= #1 lhs - rhs;
-                SLL:  r_res <= #1 lhs << rhs;
-                SLT:  r_res <= #1 s_lhs < s_rhs;
-                SLTU: r_res <= #1 lhs < rhs;
-                XOR:  r_res <= #1 lhs ^ rhs;
-                SRL:  r_res <= #1 lhs >> rhs;
-                SRA:  r_res <= #1 lhs >>> rhs;
-                OR:   r_res <= #1 lhs | rhs;
-                AND:  r_res <= #1 lhs & rhs;
-                EQ:   r_res <= #1 lhs == rhs;
-                default: r_res <= #1 0;
-            endcase
-        end
+        case (op)
+            ADD:  r_res <= #1 lhs + rhs;
+            SUB:  r_res <= #1 lhs - rhs;
+            SLL:  r_res <= #1 lhs << rhs;
+            SLT:  r_res <= #1 s_lhs < s_rhs;
+            SLTU: r_res <= #1 lhs < rhs;
+            XOR:  r_res <= #1 lhs ^ rhs;
+            SRL:  r_res <= #1 lhs >> rhs;
+            SRA:  r_res <= #1 lhs >>> rhs;
+            OR:   r_res <= #1 lhs | rhs;
+            AND:  r_res <= #1 lhs & rhs;
+            EQ:   r_res <= #1 lhs == rhs;
+            NEQ:  r_res <= #1 lhs != rhs;
+            LT:   r_res <= #1 s_lhs < s_rhs;
+            GE:   r_res <= #1 s_lhs >= s_rhs;
+            LTU:  r_res <= #1 lhs < rhs;
+            GEU:  r_res <= #1 lhs >= rhs;
+            default: r_res <= #1 0;
+        endcase
     end
 
-    assign #1 res = r_res;
+    assign #1 res = (RST_X ? r_res : 0);
 endmodule
 

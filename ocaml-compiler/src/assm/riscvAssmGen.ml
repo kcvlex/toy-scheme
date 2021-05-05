@@ -441,7 +441,11 @@ let generate arch build program =
     (Ops (Section Text)) :: (Ops (Align 2)) :: lis
   in
   let program = funcs |> List.map aux |> List.flatten in
-  let heap_sz = 65536*8 in
+  let heap_sz = match ctx.build with
+    | Simulate -> 65536
+    | FPGA -> 8192
+  in
+  let heap_sz = heap_sz * ctx.wsize in
   let main = [
     Ops (Section Text);
     Ops (Align 2);

@@ -256,24 +256,35 @@ let display () =
   let c = closure_of_prim DISPLAY in
   let cl = closure_func_of_prim DISPLAY in
   let format_s = "__display_format" in
-  let print = match ctx.build with
-    | Simulate -> pseudo (TAIL { offset = "printf" })
-    | FPGA -> actual (JAL { dst = ZERO; offset = Int 4 })  (* FIXME *)
+  let body = match ctx.build with
+    | Simulate -> 
+        [ Ops (Section Rodata);
+          Label format_s;
+          Ops (String "%d\\n");
+          Label c;
+          Ops (Word (Symbol cl));
+          Ops (Word (Num Int32.zero));
+          Ops (Section Text);
+          Label l;
+          pseudo (MV { rd = Arg 1; rs = Arg 0 });
+          pseudo (LA { rd = Arg 0; symbol = format_s });
+          pseudo (TAIL { offset = "printf" }) ]
+    | FPGA ->
+        [ Ops (Section Rodata);
+          Label c;
+          Ops (Word (Symbol cl));
+          Ops (Word (Num Int32.zero));
+          Ops (Section Text);
+          Label l;
+          pseudo NOP;
+          pseudo RET ]
   in
-  [ Ops (Section Rodata);
-    Label format_s;
-    Ops (String "%d\\n");
-    Label c;
-    Ops (Word (Symbol cl));
-    Ops (Word (Num Int32.zero));
-    Ops (Section Text);
-    Label l;
-    pseudo (MV { rd = Arg 1; rs = Arg 0 });
-    pseudo (LA { rd = Arg 0; symbol = format_s });
-    print;
-    Label cl;
-    pseudo (MV { rd = Arg 0; rs = Arg 1 });
-    pseudo (TAIL { offset = l }) ]
+  let closure = 
+    [ Label cl;
+      pseudo (MV { rd = Arg 0; rs = Arg 1 });
+      pseudo (TAIL { offset = l }) ]
+  in
+  List.append body closure
 
 let allocate () =
   let free_list = "__free_list" in

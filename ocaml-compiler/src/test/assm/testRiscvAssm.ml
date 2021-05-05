@@ -31,7 +31,7 @@ let () =
   RegAlloc.set_logging false;
   let reg_num = (7, 11, 8) in
   let thc =
-    TestUtil.source3
+    TestUtil.source6
     |> Ast.make_ast
     |> Ast.normalize
     |> Cps.cps_trans

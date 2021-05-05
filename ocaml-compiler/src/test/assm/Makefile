@@ -15,11 +15,12 @@ simulate : ${SIM_BIN}
 	spike /riscv64-elf/bin/pk $<
 
 .PHONY : fpga
-fpga : ${FPGA_BIN}
+fpga : ${FPGA_BIN} parser.py
+	riscv32-elf-objdump -x -h -s -Mno-aliases $< | python parser.py > top.v
 
 .PHONY : dump32
 dump32 : ${FPGA_BIN}
-	riscv32-elf-objdump -x -h -s -Mno-aliases $< | less
+	riscv32-elf-objdump -d -x -h -s -Mno-aliases $< | less
 
 .PHONY : clean
 clean :

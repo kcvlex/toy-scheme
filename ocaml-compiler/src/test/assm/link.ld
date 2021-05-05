@@ -7,6 +7,7 @@ SECTIONS {
     *(.text)
   }
 
+  . = 0xff00 * 0x4;
   .rodata : {
     *(.rodata)
   }

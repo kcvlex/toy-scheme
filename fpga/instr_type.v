@@ -27,7 +27,8 @@ module INSTR_TYPE(
             3'b100: f = #1 (op43 == 2'b00 ? { I_TYPE, OP_IMM } :
                             op43 == 2'b01 ? { R_TYPE, OP } :
                                             { R_TYPE, OP });        // FIXME
-            3'b101: f = #1 (op43 == 2'b01 ? { U_TYPE, LUI } :
+            3'b101: f = #1 (op43 == 2'b00 ? { U_TYPE, AUIPC } :
+                            op43 == 2'b01 ? { U_TYPE, LUI } :
                                             { U_TYPE, LUI });       // FIXME
             3'b110: f = #1 (op43 == 2'b00 ? { I_TYPE, OP_IMM_32 } :
                             op43 == 2'b01 ? { R_TYPE, OP_32 } :

@@ -90,6 +90,7 @@ module CPU(
         .addr(Ex_ls_mem_addr),
         .wd(Ex_wd_mem),
         .we(Ex_store),
+        .is_load(Ex_load),
         .valid_in(Ex_valid),
         .rd_in(Ex_rd),
         .loaded(Wb_wd_reg),

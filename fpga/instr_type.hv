@@ -66,7 +66,7 @@ localparam SYSTEM    = 5'b11_100;
 /******************** xx101 ********************/
 
 // add upper immediate to pc (program counter)
-// rd <- pc + { instr[31:12], 12'b0 }
+// rd <- pc + (imm << 12)
 // pc is offcourse current instruction address.
 localparam AUIPC     = 5'b00_101;
 
