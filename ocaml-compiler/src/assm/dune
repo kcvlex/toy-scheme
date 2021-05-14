@@ -1,5 +1,5 @@
 (library
-  (libraries util compiler)
+  (libraries util compiler str)
   (modules_without_implementation riscvAssm
                                   pseudoInstr
                                   actualInstr

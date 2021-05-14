@@ -1,3 +1,11 @@
-proc
-*vcd
+DE10*
+Chain1.cdf
+SEG7*
+Sdram_Control
+!DE10_LITE_Golden_Top.v
+db
+incremental_db
+simulate.o
 top.v
+uart
+*vcd

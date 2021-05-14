@@ -1,5 +1,4 @@
 module INSTR_TYPE(
-    input wire CLK,
     input wire [4:0] opcode,
     output wire [2:0] instr_format,
     output wire [4:0] instr_type

@@ -10,7 +10,7 @@ module ALU(
     wire signed [31:0] s_rhs = $signed(rhs);
     reg [31:0] r_res;
 
-    always @(RST_X, op, lhs, rhs) begin
+    always @(RST_X or op or lhs or rhs) begin
         case (op)
             ADD:  r_res <= #1 lhs + rhs;
             SUB:  r_res <= #1 lhs - rhs;

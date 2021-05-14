@@ -1,36 +1,47 @@
 `include "params.hv"
 
-module ALU_CONTROLLER #(
+module EXEC_STAGE #(
     parameter AWIDTH = 25
 ) (
-    input wire CLK, RST_X,
-    input wire [31:0] pc,
-    input wire [31:0] rrs1, rrs2, imm,
-    input wire [4:0] instr_type,
-    input wire [2:0] funct3,
-    input wire [6:0] funct7,
+    input wire CLK,
+    input wire RST_X,
 
-    output wire        wr_regfile,
-    output wire [31:0] wr_regfile_data,
-    output wire [31:0] next_pc,
-	
-    output wire [AWIDTH-1:0] sdram_addr,
-    output wire [31:0] sdram_wr_data,
-    output wire sdram_wr_req,
-    output wire sdram_rd_req
+    ///// REQ /////
+    input wire exec_req,
+
+    ///// INPUT /////
+    input wire [31:0] pc,
+    input wire [31:0] rrs1,
+    input wire [31:0] rrs2,
+    input wire [31:0] imm,
+    input wire [4:0]  instr_type,
+    input wire [2:0]  funct3,
+    input wire [6:0]  funct7,
+
+    ///// OUTPUT /////
+    output wire [31:0]       next_pc,
+    output wire [31:0]       result,
+    output wire [AWIDTH-1:0] mem_addr,
+    output wire [31:0]       wr_mem_data,
+    output wire              rd_mem,
+    output wire              wr_mem,
+    output wire              wr_regfile
 );
     `include "instr_type.hv"
-    `include "alu.hv"
     `include "funct.hv"
+    `include "alu.hv"
 
-    reg [31:0] r_arith_lhs, r_arith_rhs;
-    reg [31:0] r_logic_lhs, r_logic_rhs;
-    reg [4:0]  r_arith_op, r_logic_op;
-    reg        r_jump;
+    reg [31:0]  r_arith_lhs = 32'b0, 
+                r_arith_rhs = 32'b0,
+                r_logic_lhs = 32'b0,
+                r_logic_rhs = 32'b0;
+    reg [4:0]   r_arith_op  = 4'b0,
+                r_logic_op  = 4'b0;
+    reg         r_jump      = 1'b0;
+    wire [31:0] arith_res, 
+                logic_res;
     
-    wire [31:0] arith_res, logic_res;
-
-    always @(*) begin
+    always @(*) if (exec_req) begin
         r_logic_lhs  <= #1 (instr_type == BRANCH ? rrs1 : 32'b0);
         r_logic_rhs  <= #1 (instr_type == BRANCH ? rrs2 : 32'b0);
 
@@ -53,7 +64,7 @@ module ALU_CONTROLLER #(
         if (instr_type == OP || instr_type == OP_IMM) begin
             case (funct3)
                 FUNCT3_ADD:  r_arith_op <= #1 (instr_type == OP_IMM ? ADD :
-                                            funct7 == FUNCT7_ADD ? ADD : SUB);  // FIXME
+                                               funct7 == FUNCT7_ADD ? ADD : SUB);  // FIXME
                 FUNCT3_SLL:  r_arith_op <= #1 SLL;
                 FUNCT3_SLT:  r_arith_op <= #1 SLT;
                 FUNCT3_SLTU: r_arith_op <= #1 SLTU;
@@ -95,34 +106,14 @@ module ALU_CONTROLLER #(
         .op(r_logic_op),
         .res(logic_res)
     );
-
-    INCR_PC incr_pc(
-        .pc(pc),
-        .instr_type(instr_type),
-        .jump(r_jump),
-        .arith_res(arith_res),
-        .logic_res(logic_res),
-        .next_pc(next_pc)
-    );
-
-    assign #1 sdram_rd_req    = (instr_type == LOAD);
-    assign #1 sdram_wr_req    = (instr_type == STORE);
-    assign #1 sdram_wr_data   = (instr_type == STORE ? rrs1 : 32'b0);
-    assign #1 sdram_addr      = (sdram_rd_req || sdram_wr_req ? arith_res[AWIDTH-1:0] : 0);
-    assign #1 wr_regfile      = (instr_type != STORE && instr_type != BRANCH);
-    assign #1 wr_regfile_data = (r_jump ? pc + 4 : arith_res);
-endmodule
-
-module INCR_PC(
-    input wire [31:0] pc,
-    input wire [4:0] instr_type,
-    input wire jump,
-    input wire [31:0] arith_res, logic_res,
-    output wire [31:0] next_pc
-);
-    `include "instr_type.hv"
-    assign #1 next_pc = (!jump                ? pc + 4 :
-                         instr_type != BRANCH ? arith_res :
-                         logic_res            ? arith_res
-                                              : pc + 4);
+    
+    assign #1 next_pc    = (~r_jump              ? pc + 4    :
+                            instr_type != BRANCH ? arith_res :
+                            logic_res            ? arith_res : pc + 4);
+    assign #1 result      = (r_jump ? pc + 4 : arith_res);
+    assign #1 wr_mem_data = rrs2;
+    assign #1 mem_addr    = arith_res[AWIDTH-1:0];
+    assign #1 wr_mem      = (instr_type == STORE);
+    assign #1 rd_mem      = (instr_type == LOAD);
+    assign #1 wr_regfile  = (instr_type != STORE && instr_type != BRANCH);
 endmodule

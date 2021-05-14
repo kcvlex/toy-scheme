@@ -1,6 +1,6 @@
 import re
 
-DEBUG = False
+DEBUG = True
 
 def check_prefix(prefix, s):
     l = len(prefix)
@@ -145,52 +145,72 @@ def gen_tail():
     if DEBUG:
         return """
     always @(p.PC) begin if (RST_X && p.PC == 0) $finish(); end
+
+    wire dram_wr, dram_rd;
+    wire [24:0] dram_addr;
+    wire [15:0] dram_rd_data, dram_wr_data;
+    
     always @(posedge CLK) begin
-        #30 $write("%d : %x \t %d %d %d %d \t %d %d %d %b \t %d %d %d \t %d %d %d %d %d \t %b\\n",
+        #30 $write("%d : PC=%x rs1=%d rs2=%d rd=%d addr=%x read=%x\\n",
                 $stime-30, 
                 p.PC,
-                p.cpu.rs1, p.cpu.rs2, p.cpu.rd, $signed(p.cpu.imm),
-                $signed(p.cpu.rrs1), $signed(p.cpu.rrs2), $signed(p.cpu.Ex_wd_mem), $signed(p.cpu.Ex_store),
-                $signed(p.cpu.alu_cont.arith_alu.lhs), $signed(p.cpu.alu_cont.arith_alu.rhs), $signed(p.cpu.alu_cont.arith_alu.res),
-                $signed(p.cpu.regfile.x[19]), $signed(p.cpu.regfile.x[20]), $signed(p.cpu.regfile.x[21]), $signed(p.cpu.regfile.x[9]), $signed(p.cpu.regfile.x[1]),
-                p.cpu.instr_type);
+                p.cpu.rs1, p.cpu.rs2, p.cpu.rd, 
+                dram_addr, dram_rd_data);
     end
-    PROCESSOR p(CLK, RST_X);
+
+    PROCESSOR p(
+        .CLK(CLK), 
+        .RST_X(RST_X)
+    );
 endmodule
     """
     else:
         return """
     always @(p.PC) begin if (RST_X && p.PC == 0) $finish(); end
-    PROCESSOR p(CLK, RST_X);
+
+    wire dram_wr, dram_rd;
+    wire [24:0] dram_addr;
+    wire [15:0] dram_rd_data, dram_wr_data;
+
+    PROCESSOR p(
+        .CLK(CLK), 
+        .RST_X(RST_X)
+    );
 endmodule
     """
 
 tail = gen_tail()
 
-def fix_hex(h):
+def fix_hex(h, xlen):
     h = hex(h)[2:]
-    return "32'h" + h
+    prefix = "{}'h".format(xlen)
+    return prefix + h
+
+base8 = 1 << 8;
+base16 = 1 << 16
+
+def set_value(addr, data):
+    b_and = base8 - 1
+    format_s = "        p.sdram.mem[{}] = {};"
+    lis = []
+    for i in range(4):
+        s = format_s.format(fix_hex(addr + (3 - i), 25), fix_hex(data & b_and, 8))
+        lis.append(s)
+        data >>= 8
+    return '\n'.join(reversed(lis))
 
 class Generator:
     def __init__(self, parser):
         self.parser = parser
 
     def set_imem(self):
-        def gen(addr, instr):
-            addr //= 4
-            instr = fix_hex(instr)
-            return "        p.imem.mem[{}] = {};".format(addr, instr)
-        return [ gen(addr, instr) for addr, instr in self.parser.text ]
+        return [ set_value(addr, instr) for addr, instr in self.parser.text ]
 
     def set_data(self):
-        def gen(addr, data):
-            addr //= 4
-            data = fix_hex(data)
-            return "        p.cpu.sdram.mem[{}] = {};".format(addr, data)
         import copy
         lis = copy.deepcopy(self.parser.data)
         lis.extend(self.parser.rodata)
-        return [ gen(addr, data) for addr, data in lis ]
+        return [ set_value(addr, data) for addr, data in lis ]
 
     def set_display(self):
         return '    always @(p.PC) if (p.PC == {}) $write("display : %d\\n", p.cpu.regfile.x[10]);'.format(self.parser.display)
@@ -201,7 +221,7 @@ class Generator:
         display = self.set_display()
         body = '\n'.join(
                 [ "    initial begin",
-                  "        p.PC = {};".format(fix_hex(parser.entry-4)),
+                  "        p.PC = {};".format(fix_hex(parser.entry-4, 32)),
                   imem,
                   data,
                   "    end" ])

@@ -202,6 +202,11 @@ let constant_conv p a b = match p with
   | SymbolType.LESS -> int_of_bool (a < b)
   | _ -> raise (Invalid_argument "constant_conv")
 
+let normalize_symbol =
+  let hyphen = Str.regexp "-" in
+  fun s -> Str.global_replace hyphen "_" s 
+
+
 let rec convert_value value = match value with
   | ThreeAddressCodeType.Int i -> (Atomic (Int i), [])
   | ThreeAddressCodeType.Bool b -> (Atomic (Int (if b then 1 else 0)), [])
@@ -209,7 +214,7 @@ let rec convert_value value = match value with
   | ThreeAddressCodeType.Nil -> (Atomic (Int 0), [])
   | ThreeAddressCodeType.PrimCall (p, args) -> convert_primcall p args
   | ThreeAddressCodeType.Primitive p -> (Atomic (Sym (closure_of_prim p)), [])
-  | ThreeAddressCodeType.Label s -> (Atomic (Sym s), [])
+  | ThreeAddressCodeType.Label s -> (Atomic (Sym (normalize_symbol s)), [])
   | ThreeAddressCodeType.Quote _ -> raise (Invalid_argument "UNIMPLED")
 and convert_primcall p args =
   let make_call f = Pseudo (CALL { offset = f }) in

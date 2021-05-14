@@ -1,7 +1,10 @@
-FILES=$(shell ls *\.v)
+FILES=$(shell ls *\.v | grep -v DE10 | grep -v SEG | grep -v sdram)
 
-all: prog
-	./prog
+simulate: simulate.o
+	./$<
 
-prog: ${FILES}
-	iverilog ${FILES} -o prog
+simulate.o: ${FILES} simple_sdram.v
+	iverilog $^ -o simulate.o
+
+clean:
+	rm -f simulate.o

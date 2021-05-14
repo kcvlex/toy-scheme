@@ -20,7 +20,7 @@ fpga : ${FPGA_BIN} parser.py
 
 .PHONY : dump32
 dump32 : ${FPGA_BIN}
-	riscv32-elf-objdump -d -x -h -s -Mno-aliases $< | less
+	riscv32-elf-objdump -d -x -h -Mno-aliases $< | less
 
 .PHONY : clean
 clean :

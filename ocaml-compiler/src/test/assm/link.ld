@@ -2,12 +2,10 @@ OUTPUT_ARCH("riscv");
 ENTRY(main);
 
 SECTIONS {
-  . = 0x00000010;
+  . = 0xffff + 0x10;
   .text : {
     *(.text)
   }
-
-  . = 0xff00 * 0x4;
   .rodata : {
     *(.rodata)
   }

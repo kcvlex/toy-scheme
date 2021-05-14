@@ -1,3 +1,6 @@
 (executable
  (name main)
- (libraries compiler))
+ (libraries compiler assm))
+(env
+  (dev
+    (flags (:standard -warn-error -A))))
