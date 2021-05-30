@@ -1,0 +1,27 @@
+localparam WAIT           = 4'd0;
+localparam IDLE           = 4'd1;
+localparam ROW_ACTIVE     = 4'd2;
+localparam WRITE          = 4'd3;
+localparam READ           = 4'd4;
+localparam READING        = 4'd5;
+localparam PRECHARGE      = 4'd6;
+localparam PREPARING      = 4'd7;
+
+localparam CMD_DESL      = 4'b1000;
+localparam CMD_NOP       = 4'b0111;
+localparam CMD_BST       = 4'b0110;
+localparam CMD_READ      = 4'b0101;
+localparam CMD_WRITE     = 4'b0100;
+localparam CMD_ACT       = 4'b0011;
+localparam CMD_REFRESH   = 4'b0001;
+localparam CMD_PRECHARGE = 4'b0010;
+localparam CMD_MODE_REG  = 4'b0000;
+
+localparam T_CAC = 32'd2;    // CAS(Column Address Strobe) latency
+localparam T_RCD = 32'd2;    // ROW_ACTIVE to READ/WRITE
+localparam T_CCD = 32'd1;    // Column Command Delay
+localparam T_RC  = 32'd8;    // Refresh
+localparam T_RAS = 32'd5;
+localparam T_DPL = 32'd2;
+localparam T_MRD = 32'd2;
+localparam T_RP  = 32'd2;
