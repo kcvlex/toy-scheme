@@ -1,73 +1,90 @@
-module MEM_STAGE #(
-    parameter AWIDTH = 25
-) (
-    input wire CLK,
-    input wire RST_X,
+module MEM_STAGE(
+    input wire clk,
+    input wire reset,
 
     ///// REQ and ACK /////
-    input  wire mem_req,
-    output wire mem_ack,
+    input  wire mem_wr_req,
+    input  wire mem_rd_req,
+    output reg  mem_wr_fin,
+    output reg  mem_rd_fin,
 
-    ///// INPUT /////
-    input wire              wr_mem,
-    input wire              rd_mem,
-    input wire [AWIDTH-1:0] mem_addr,
-    input wire [31:0]       mem_wr_data,
-
-    ///// OUTPUT /////
-    output wire [31:0] mem_rd_data,
+    ///// MEM /////
+    input wire [31:0] mem_wr_addr,
+    input wire [31:0] mem_wr_data,
+    input wire [31:0] mem_rd_addr,
+    output reg [31:0] mem_rd_data,
 
     ///// SDRAM /////
-    input  wire [31:0]       sdram_rd_data,
-    input  wire              sdram_rd_ack,
-    input  wire              sdram_wr_ack,
-    output wire              sdram_rd_req,
-    output wire              sdram_wr_req,
-    output wire [AWIDTH-1:0] sdram_addr,
-    output wire [31:0]       sdram_wr_data
+    input  wire [31:0] sdram_rd_data,
+    output wire [31:0] sdram_rd_addr,
+    output reg         sdram_rd_req,
+    input  wire        sdram_rd_fin,
+
+    output wire [31:0] sdram_wr_data,
+    output wire [31:0] sdram_wr_addr,
+    output reg         sdram_wr_req,
+    input  wire        sdram_wr_fin
 );
-    localparam IDLE       = 3'd0;
-    localparam MEM_WR_REQ = 3'd1;
-    localparam MEM_RD_REQ = 3'd2;
-    localparam MEM_WR_FIN = 3'd3;
-    localparam MEM_RD_FIN = 3'd4;
+    localparam IDLE   = 3'd0;
+    localparam WR_REQ = 3'd1;
+    localparam RD_REQ = 3'd2;
+    localparam FIN    = 3'd3;
 
-    reg [2:0] state = IDLE, next_state = IDLE;
-    reg [31:0] r_sdram_rd_data = 32'b0;
-    reg r_sdram_wr_req = 1'b0, r_sdram_rd_req = 1'b0;
+    reg [2:0] state = IDLE;
 
-    always @(state or mem_req or sdram_wr_ack or sdram_rd_ack) begin
-        case (state)
-            IDLE: begin
-                if (!mem_req)    next_state <= IDLE;
-                else if (wr_mem) next_state <= MEM_WR_REQ;
-                else if (rd_mem) next_state <= MEM_RD_REQ;
-                else             next_state <= MEM_WR_FIN;  // FIXME
-            end
-            MEM_WR_REQ: begin
-                if (sdram_wr_ack) next_state <= MEM_WR_FIN;
-                else              next_state <= MEM_WR_REQ;
-            end
-            MEM_RD_REQ: begin
-                if (sdram_rd_ack) next_state <= MEM_RD_FIN;
-                else              next_state <= MEM_RD_REQ;
-            end
-            MEM_WR_FIN:           next_state <= IDLE;
-            MEM_RD_FIN:           next_state <= IDLE;
-        endcase
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            state        <= #1 IDLE;
+            mem_wr_fin   <= #1 1'b0;
+            mem_rd_fin   <= #1 1'b0;
+            mem_rd_data  <= #1 32'b0;
+            sdram_wr_req <= #1 1'b0;
+            sdram_rd_req <= #1 1'b0;
+        end else begin
+            case (state)
+                IDLE: begin
+                    mem_wr_fin        <= #1 1'b0;
+                    mem_rd_fin        <= #1 1'b0;
+                    if (mem_wr_req) begin
+                        state         <= #1 WR_REQ;
+                        sdram_wr_req  <= #1 1'b1;
+                    end else if (mem_rd_req) begin
+                        state         <= #1 RD_REQ;
+                        sdram_rd_req  <= #1 1'b1;
+                    end else begin
+                        state         <= #1 IDLE;
+                    end
+                end
+                WR_REQ: begin
+                    if (sdram_wr_fin) begin
+                        state         <= #1 FIN;
+                        mem_wr_fin    <= #1 1'b1;
+                        sdram_wr_req  <= #1 1'b0;
+                    end else begin
+                        state         <= #1 WR_REQ;
+                    end
+                end
+                RD_REQ: begin
+                    if (sdram_rd_fin) begin
+                        state         <= #1 FIN;
+                        mem_rd_fin    <= #1 1'b1;
+                        sdram_rd_req  <= #1 1'b0;
+                        mem_rd_data   <= #1 sdram_rd_data;
+                    end else begin
+                        state         <= #1 RD_REQ;
+                    end
+                end
+                FIN: begin
+                    state             <= #1 IDLE;
+                end
+                default: begin
+                    state             <= #1 state;
+                end
+            endcase
+        end
     end
 
-    always @(posedge CLK) state <= next_state;
-    always @(state) begin
-        r_sdram_wr_req <= (state == MEM_WR_REQ);
-        r_sdram_rd_req <= (state == MEM_RD_REQ);
-        r_sdram_rd_data <= (state == MEM_RD_FIN ? sdram_rd_data : r_sdram_rd_data);
-    end
-
-    assign #1 mem_ack       = (state == MEM_RD_FIN || state == MEM_WR_FIN);
-    assign #1 sdram_addr    = mem_addr;
+    assign #1 sdram_wr_addr = mem_wr_addr;
     assign #1 sdram_wr_data = mem_wr_data;
-    assign #1 mem_rd_data   = r_sdram_rd_data;
-    assign #1 sdram_wr_req  = r_sdram_wr_req;
-    assign #1 sdram_rd_req  = r_sdram_rd_req;
+    assign #1 sdram_rd_addr = mem_rd_addr;
 endmodule

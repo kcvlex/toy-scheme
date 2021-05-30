@@ -1,190 +1,235 @@
 module PROCESSOR(
-    input wire CLK, RST_X
+    input wire clk,
+    input wire reset
 );
-    localparam AWIDTH = 5'd22;
+    localparam IDLE   = 4'd0;
+    localparam FETCH  = 4'd1;
+    localparam EXEC   = 4'd3;
+    localparam MEM_WR = 4'd4;
+    localparam MEM_RD = 4'd5;
+    localparam WB     = 4'd6;
 
-    localparam IDLE  = 3'd0;
-    localparam FETCH = 3'd1;
-    localparam EXEC  = 3'd2;  // Decode and Exec
-    localparam MEM   = 3'd3;
-    localparam WB    = 3'd4;
-
-    reg [2:0] state = IDLE, next_state = IDLE;
+    reg [3:0] state = IDLE;
     
     // Program counter
     reg [31:0] PC;
 
-    // Detect RST_X
-    wire reset;
-
     // SDRAM
-    wire sdram_wr_req;
-    wire sdram_rd_req;
-    wire sdram_wr_ack;
-    wire sdram_rd_ack;
-    wire [AWIDTH-1:0] sdram_addr;
+    wire        sdram_wr_req;
+    wire        sdram_rd_req;
+    wire        sdram_wr_ack;
+    wire        sdram_rd_ack;
+    wire [31:0] sdram_wr_addr;
+    wire [31:0] sdram_rd_addr;
     wire [31:0] sdram_rd_data;
     wire [31:0] sdram_wr_data;
 
     // FETCH
-    wire [AWIDTH-1:0] fetch_sdram_addr;
-    wire              fetch_sdram_rd_req;
-    wire [31:0]       instr;
-    reg               fetch_req = 1'b0;
-    wire              fetch_ack;
+    wire [31:0] fetch_sdram_rd_addr;
+    wire        fetch_sdram_rd_req;
+    wire [31:0] instr;
+    reg         fetch_req;
+    wire        fetch_fin;
 
     // CORE
-    wire [AWIDTH-1:0] core_mem_addr;
-    wire [31:0]       core_next_pc;
-    wire [31:0]       core_res;
-    wire [31:0]       core_wr_mem_data;
-    wire              core_wr_regfile;
-    wire              core_wr_mem;
-    wire              core_rd_mem;
-    reg               core_req;
+    wire [31:0] core_wr_mem_addr;
+    wire [31:0] core_wr_mem_data;
+    wire [31:0] core_rd_mem_addr;
+    wire [31:0] core_next_pc;
+    wire [31:0] core_res;
+    wire        core_wr_mem_req;
+    wire        core_rd_mem_req;
+    wire        core_wr_regfile;
+    reg         core_req;
 
     // MEM
-    wire [AWIDTH-1:0] mem_sdram_addr;
-    wire [31:0]       mem_sdram_wr_data;
-    wire [31:0]       mem_sdram_rd_data;
-    wire              mem_sdram_wr_req;
-    wire              mem_sdram_rd_req;
-    reg               mem_req = 1'b0;
-    wire              mem_ack;
+    wire [31:0] mem_sdram_wr_addr;
+    wire [31:0] mem_sdram_wr_data;
+    wire        mem_sdram_wr_req;
+    wire [31:0] mem_sdram_rd_addr;
+    wire [31:0] mem_rd_data;
+    wire        mem_sdram_rd_req;
+    reg         mem_wr_req;
+    wire        mem_wr_fin;
+    reg         mem_rd_req;
+    wire        mem_rd_fin;
 
-    wire         wb_regfile;
-    wire [31:0]  wb_regfile_data;
+    // WB
+    reg         wb_wr_regfile;
+    reg [31:0]  wb_wr_regfile_data;
 
-    DETECT_POSEDGE detect_rst_x(
-        .CLK(CLK),
-        .SIGNAL(RST_X),
-        .EDGE(reset)
-    );
+    reg start = 0, init = 0;
+    always @(posedge reset) start <= 1'b1;
 
-    INSTR_FETCH #(
-        .AWIDTH(AWIDTH)
-    ) instr_fetch(
-        .CLK(CLK),
-        .RST_X(RST_X),
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            state <= #1 IDLE;
+        end else if (start) begin
+            case (state)
+                IDLE: begin
+                    state          <= #1 FETCH;
+                    fetch_req      <= #1 1'b1;
+                    if (~init) begin
+                        init       <= 1'b1;
+                        PC         <= PC;
+                    end else begin
+                        PC         <= core_next_pc;
+                    end
+                end
+                FETCH: begin
+                    if (fetch_fin) begin
+                        fetch_req  <= #1 1'b0;
+                        state      <= #1 EXEC;
+                        core_req   <= #1 1'b1;
+                    end else begin
+                        state      <= #1 FETCH;
+                    end
+                end
+                EXEC: begin
+                    core_req       <= #1 1'b0;
+                    if (core_wr_mem_req) begin
+                        state      <= #1 MEM_WR;
+                        mem_wr_req <= #1 1'b1;
+                    end else if (core_rd_mem_req) begin
+                        state      <= #1 MEM_RD;
+                        mem_rd_req <= #1 1'b1;
+                    end else begin
+                        state           <= #1 WB;
+                        wb_wr_regfile   <= #1 core_wr_regfile;
+                        wb_wr_regfile_data <= #1 core_res;
+                    end
+                end
+                MEM_WR: begin
+                    if (mem_wr_fin) begin
+                        state      <= #1 IDLE;
+                        mem_wr_req <= #1 1'b0;
+                    end else begin
+                        state      <= #1 MEM_WR;
+                    end
+                end
+                MEM_RD: begin
+                    if (mem_rd_fin) begin
+                        state           <= #1 WB;
+                        mem_rd_req      <= #1 1'b0;
+                        wb_wr_regfile   <= #1 1'b1;
+                        wb_wr_regfile_data <= #1 mem_rd_data;
+                    end else begin
+                        state           <= #1 MEM_RD;
+                    end
+                end
+                WB: begin
+                    wb_wr_regfile       <= #1 1'b0;
+                    state               <= #1 IDLE;
+                end
+                default: begin
+                    state               <= #1 state;
+                end
+            endcase
+        end
+    end
+
+
+    INSTR_FETCH instr_fetch(
+        .clk(clk),
+        .reset(reset),
         .pc(PC),
+
         .instr(instr),
-        .fetch_req(fetch_req),
-        .fetch_ack(fetch_ack),
-        .sdram_addr(fetch_sdram_addr),
-        .sdram_rd_ack(sdram_rd_ack),
+
+        .req(fetch_req),
+        .fin(fetch_fin),
+
         .sdram_rd_req(fetch_sdram_rd_req),
+        .sdram_rd_fin(sdram_rd_fin),
+        .sdram_rd_addr(fetch_sdram_rd_addr),
         .sdram_rd_data(sdram_rd_data)
     );
    
-    CORE #(
-        .AWIDTH(AWIDTH)
-    ) core(
-        .CLK(CLK),
-        .RST_X(RST_X),
+    CORE core(
+        .clk(clk),
+        .reset(reset),
         .pc(PC),
         
         .req(core_req),
 
         .instr(instr),
-        .iwr_regfile(wb_regfile),
-        .wr_regfile_data(wb_regfile_data),
+
+        .iwr_regfile(wb_wr_regfile),
+        .wr_regfile_data(wb_wr_regfile_data),
+
         .owr_regfile(core_wr_regfile),
 
-        .mem_addr(core_mem_addr),
+        .wr_mem_req(core_wr_mem_req),
+        .wr_mem_addr(core_wr_mem_addr),
         .wr_mem_data(core_wr_mem_data),
-        .wr_mem(core_wr_mem),
-        .rd_mem(core_rd_mem),
+
+        .rd_mem_req(core_rd_mem_req),
+        .rd_mem_addr(core_rd_mem_addr),
 
         .result(core_res),
         .next_pc(core_next_pc)
     );
 
-    MEM_STAGE #(
-        .AWIDTH(AWIDTH)
-    ) mem(
-        .CLK(CLK),
-        .RST_X(RST_X),
+    MEM_STAGE mem(
+        .clk(clk),
+        .reset(reset),
 
-        .mem_req(mem_req),
-        .mem_ack(mem_ack),
+        .mem_wr_req(mem_wr_req),
+        .mem_wr_fin(mem_wr_fin),
+        .mem_rd_req(mem_rd_req),
+        .mem_rd_fin(mem_rd_fin),
 
-        .wr_mem(core_wr_mem),
-        .rd_mem(core_rd_mem),
-        .mem_addr(core_mem_addr),
+        .mem_wr_addr(core_wr_mem_addr),
         .mem_wr_data(core_wr_mem_data),
+        .mem_rd_addr(core_rd_mem_addr),
+        .mem_rd_data(mem_rd_data),
 
-        .mem_rd_data(mem_sdram_rd_data),
-
-        .sdram_rd_ack(sdram_rd_ack),
-        .sdram_wr_ack(sdram_wr_ack),
+        ///// SDRAM /////
+        .sdram_rd_fin(sdram_rd_fin),
+        .sdram_wr_fin(sdram_wr_fin),
         .sdram_rd_data(sdram_rd_data),
+
         .sdram_rd_req(mem_sdram_rd_req),
+        .sdram_rd_addr(mem_sdram_rd_addr),
+
         .sdram_wr_req(mem_sdram_wr_req),
-        .sdram_addr(mem_sdram_addr),
+        .sdram_wr_addr(mem_sdram_wr_addr),
         .sdram_wr_data(mem_sdram_wr_data)
-    );
-
-    assign #1 sdram_wr_req =  (state == MEM   ? mem_sdram_wr_req   : 1'b0);
-    assign #1 sdram_rd_req =  (state == FETCH ? fetch_sdram_rd_req :
-                               state == MEM   ? mem_sdram_rd_req   : 1'b0);
-    assign #1 sdram_wr_data = (state == MEM   ? mem_sdram_wr_data  : 32'b0);
-    assign #1 sdram_addr    = (state == FETCH ? fetch_sdram_addr   :
-                               state == MEM   ? mem_sdram_addr     : 0);
-
-    SIMPLE_SDRAM #(
-        .AWIDTH(AWIDTH),
-        .MEM_SIZE(65536*2)
-    ) sdram(
-        .CLK(CLK),
-        .RST_X(RST_X),
-        .wr_req(sdram_wr_req),
-        .rd_req(sdram_rd_req),
-        .wr_data(sdram_wr_data),
-        .rd_data(sdram_rd_data),
-        .addr(sdram_addr),
-        .wr_ack(sdram_wr_ack),
-        .rd_ack(sdram_rd_ack)
     );
 
     ///// WB Stage /////
     assign #1 wb_regfile      = (state == WB && core_wr_regfile);
-    assign #1 wb_regfile_data = (core_rd_mem ? mem_sdram_rd_data : core_res);
+    assign #1 wb_regfile_data = (core_rd_mem_req ? mem_rd_data : core_res);
 
-    ///// State Transition /////
-    always @(state or reset or fetch_ack or mem_ack) begin
-        case (state)
-            IDLE: begin
-                if (reset)     next_state <= FETCH;
-                else           next_state <= IDLE;
-            end
-            FETCH: begin
-                if (fetch_ack) next_state <= EXEC;
-                else           next_state <= FETCH;
-            end
-            EXEC:              next_state <= MEM;
-            MEM: begin
-                if (mem_ack)   next_state <= WB;
-                else           next_state <= MEM;
-            end
-            WB:                next_state <= FETCH;
-        endcase
-    end
+    assign #1 sdram_wr_req  = (state == MEM_WR ? mem_sdram_wr_req    : 1'b0);
+    assign #1 sdram_wr_addr = (state == MEM_WR ? mem_sdram_wr_addr   : 32'b0);
+    assign #1 sdram_wr_data = (state == MEM_WR ? mem_sdram_wr_data   : 32'b0);
+    assign #1 sdram_rd_req  = (state == FETCH  ? fetch_sdram_rd_req  :
+                               state == MEM_RD ? mem_sdram_rd_req    : 1'b0);
+    assign #1 sdram_rd_addr = (state == FETCH  ? fetch_sdram_rd_addr :
+                               state == MEM_RD ? mem_sdram_rd_addr   : 32'b0);
 
-    always @(posedge CLK) state <= next_state;
+    SIMPLE_SDRAM #(
+        .MEM_SIZE(65536*2)
+    ) sdram(
+        .clk(clk),
+        .reset(reset),
 
-    always @(state) begin
-        if (state == FETCH) PC = core_next_pc;
-        fetch_req = (state == FETCH);
-        core_req  = (state == EXEC);
-        mem_req   = (state == MEM);
-    end
+        .wr_req(sdram_wr_req),
+        .wr_fin(sdram_wr_fin),
+        .wr_addr(sdram_wr_addr),
+        .wr_data(sdram_wr_data),
+
+        .rd_req(sdram_rd_req),
+        .rd_fin(sdram_rd_fin),
+        .rd_addr(sdram_rd_addr),
+        .rd_data(sdram_rd_data)
+    );
 endmodule
 
-module CORE #(
-    parameter AWIDTH = 25
-) (
-    input wire CLK,
-    input wire RST_X,
+module CORE(
+    input wire        clk,
+    input wire        reset,
     input wire [31:0] pc,
     
     ///// REQ /////
@@ -199,10 +244,11 @@ module CORE #(
     output wire        owr_regfile,
 
     ///// MEM /////
-    output wire [AWIDTH-1:0] mem_addr,
-    output wire [31:0]       wr_mem_data,
-    output wire              wr_mem,
-    output wire              rd_mem,
+    output wire        wr_mem_req,
+    output wire [31:0] wr_mem_addr,
+    output wire [31:0] wr_mem_data,
+    output wire        rd_mem_req,
+    output wire [31:0] rd_mem_addr,
 
     ///// Execution Result /////
     output wire [31:0] result,
@@ -233,10 +279,10 @@ module CORE #(
     );
 
     REGFILE regfile(
-        .CLK(CLK),
-        .RST_X(RST_X),
-        .wr_regfile(iwr_regfile),
-        .wr_regfile_data(wr_regfile_data),
+        .clk(clk),
+        .reset(reset),
+        .wr_req(iwr_regfile),
+        .wr_data(wr_regfile_data),
         .rs1(rs1),
         .rs2(rs2),
         .rd(rd),
@@ -244,13 +290,11 @@ module CORE #(
         .rrs2(rrs2)
     );
 
-    EXEC_STAGE #(
-        .AWIDTH(AWIDTH)
-    ) exec(
-        .CLK(CLK),
-        .RST_X(RST_X),
+    EXEC_STAGE exec(
+        .clk(clk),
+        .reset(reset),
 
-        .exec_req(req),
+        .req(req),
 
         .pc(pc),
         .rrs1(rrs1),
@@ -262,10 +306,13 @@ module CORE #(
 
         .next_pc(next_pc),
         .result(result),
-        .mem_addr(mem_addr),
+
+        .wr_mem(wr_mem_req),
+        .wr_mem_addr(wr_mem_addr),
         .wr_mem_data(wr_mem_data),
-        .wr_mem(wr_mem),
-        .rd_mem(rd_mem),
+
+        .rd_mem(rd_mem_req),
+        .rd_mem_addr(rd_mem_addr),
         .wr_regfile(owr_regfile)
     );
 endmodule

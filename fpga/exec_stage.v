@@ -1,13 +1,9 @@
-`include "params.hv"
-
-module EXEC_STAGE #(
-    parameter AWIDTH = 25
-) (
-    input wire CLK,
-    input wire RST_X,
+module EXEC_STAGE(
+    input wire clk,
+    input wire reset,
 
     ///// REQ /////
-    input wire exec_req,
+    input wire req,
 
     ///// INPUT /////
     input wire [31:0] pc,
@@ -19,13 +15,14 @@ module EXEC_STAGE #(
     input wire [6:0]  funct7,
 
     ///// OUTPUT /////
-    output wire [31:0]       next_pc,
-    output wire [31:0]       result,
-    output wire [AWIDTH-1:0] mem_addr,
-    output wire [31:0]       wr_mem_data,
-    output wire              rd_mem,
-    output wire              wr_mem,
-    output wire              wr_regfile
+    output wire [31:0] next_pc,
+    output wire [31:0] result,
+    output wire [31:0] wr_mem_addr,
+    output wire [31:0] rd_mem_addr,
+    output wire [31:0] wr_mem_data,
+    output wire        rd_mem,
+    output wire        wr_mem,
+    output wire        wr_regfile
 );
     `include "instr_type.hv"
     `include "funct.hv"
@@ -41,7 +38,7 @@ module EXEC_STAGE #(
     wire [31:0] arith_res, 
                 logic_res;
     
-    always @(*) if (exec_req) begin
+    always @(*) if (req) begin
         r_logic_lhs  <= #1 (instr_type == BRANCH ? rrs1 : 32'b0);
         r_logic_rhs  <= #1 (instr_type == BRANCH ? rrs2 : 32'b0);
 
@@ -90,8 +87,8 @@ module EXEC_STAGE #(
     end
 
     ALU arith_alu(
-        .CLK(CLK),
-        .RST_X(RST_X),
+        .clk(clk),
+        .reset(reset),
         .lhs(r_arith_lhs),
         .rhs(r_arith_rhs),
         .op(r_arith_op),
@@ -99,8 +96,8 @@ module EXEC_STAGE #(
     );
 
     ALU logic_alu(
-        .CLK(CLK),
-        .RST_X(RST_X),
+        .clk(clk),
+        .reset(reset),
         .lhs(r_logic_lhs),
         .rhs(r_logic_rhs),
         .op(r_logic_op),
@@ -112,8 +109,9 @@ module EXEC_STAGE #(
                             logic_res            ? arith_res : pc + 4);
     assign #1 result      = (r_jump ? pc + 4 : arith_res);
     assign #1 wr_mem_data = rrs2;
-    assign #1 mem_addr    = arith_res[AWIDTH-1:0];
     assign #1 wr_mem      = (instr_type == STORE);
     assign #1 rd_mem      = (instr_type == LOAD);
+    assign #1 wr_mem_addr = (wr_mem ? arith_res : 32'b0);
+    assign #1 rd_mem_addr = (rd_mem ? arith_res : 32'b0);
     assign #1 wr_regfile  = (instr_type != STORE && instr_type != BRANCH);
 endmodule
