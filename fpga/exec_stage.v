@@ -28,90 +28,88 @@ module EXEC_STAGE(
     `include "funct.hv"
     `include "alu.hv"
 
-    reg [31:0]  r_arith_lhs = 32'b0, 
-                r_arith_rhs = 32'b0,
-                r_logic_lhs = 32'b0,
-                r_logic_rhs = 32'b0;
-    reg [4:0]   r_arith_op  = 4'b0,
-                r_logic_op  = 4'b0;
-    reg         r_jump      = 1'b0;
-    wire [31:0] arith_res, 
-                logic_res;
+    wire [31:0] arith_lhs, arith_rhs, logic_lhs, logic_rhs;
+    wire [4:0]  arith_op, logic_op;
+    wire        jump;
+    wire [31:0] arith_res, logic_res;
+    wire        is_lhs_pc;
     
-    always @(*) if (req) begin
-        r_logic_lhs  <= #1 (instr_type == BRANCH ? rrs1 : 32'b0);
-        r_logic_rhs  <= #1 (instr_type == BRANCH ? rrs2 : 32'b0);
+    // Arithmetic
+    assign #1 is_lhs_pc = (instr_type == BRANCH |
+                           instr_type == JAL    |
+                           instr_type == AUIPC);
+    assign #1 arith_lhs = (is_lhs_pc         ? pc
+                        :  instr_type == LUI ? 32'b0 
+                        :  rrs1);
+    assign #1 arith_rhs = (instr_type == OP ? rrs2 : imm);
+    assign #1 arith_op  = (instr_type != OP && instr_type != OP_IMM     ? ADD
+                        :  funct3 == FUNCT3_ADD && instr_type == OP_IMM ? ADD
+                        :  funct3 == FUNCT3_ADD && funct7 == FUNCT7_ADD ? ADD
+                        :  funct3 == FUNCT3_ADD                         ? SUB
+                        :  funct3 == FUNCT3_SLL                         ? SLL
+                        :  funct3 == FUNCT3_SLT                         ? SLT
+                        :  funct3 == FUNCT3_SLTU                        ? SLTU
+                        :  funct3 == FUNCT3_XOR                         ? XOR
+                        :  funct3 == FUNCT3_SR && funct7 == FUNCT7_SRL  ? SRL
+                        :  funct3 == FUNCT3_SR                          ? SRA
+                        :  funct3 == FUNCT3_OR                          ? OR
+                        :  funct3 == FUNCT3_AND                         ? AND
+                        :                                                 5'b0);
 
-        case (instr_type)
-            BRANCH, JAL, JALR: r_jump <= #1 1;
-            default:           r_jump <= #1 0;
-        endcase
-        
-        case (instr_type)
-            OP, OP_IMM, STORE, LOAD, JALR: r_arith_lhs <= #1 rrs1;
-            BRANCH, JAL, AUIPC:            r_arith_lhs <= #1 pc;
-            LUI:                           r_arith_lhs <= #1 0;
-        endcase
-        
-        case (instr_type)
-            OP:      r_arith_rhs <= #1 rrs2;
-            default: r_arith_rhs <= #1 imm;
-        endcase
+    // Logic
+    assign #1 logic_lhs = (instr_type == BRANCH ? rrs1 : 32'b0);
+    assign #1 logic_rhs = (instr_type == BRANCH ? rrs2 : 32'b0);
+    assign #1 logic_op  = (funct3 == FUNCT3_EQ  ? EQ
+                        :  funct3 == FUNCT3_NEQ ? NEQ
+                        :  funct3 == FUNCT3_LT  ? LT
+                        :  funct3 == FUNCT3_GE  ? GE
+                        :  funct3 == FUNCT3_LTU ? LTU
+                        :  funct3 == FUNCT3_GEU ? GEU
+                        :                         5'b0);
 
-        if (instr_type == OP || instr_type == OP_IMM) begin
-            case (funct3)
-                FUNCT3_ADD:  r_arith_op <= #1 (instr_type == OP_IMM ? ADD :
-                                               funct7 == FUNCT7_ADD ? ADD : SUB);  // FIXME
-                FUNCT3_SLL:  r_arith_op <= #1 SLL;
-                FUNCT3_SLT:  r_arith_op <= #1 SLT;
-                FUNCT3_SLTU: r_arith_op <= #1 SLTU;
-                FUNCT3_XOR:  r_arith_op <= #1 XOR;
-                FUNCT3_SR:   r_arith_op <= #1 (funct7 == FUNCT7_SRL ? SRL : SRA);  // FIXME
-                FUNCT3_OR:   r_arith_op <= #1 OR;
-                FUNCT3_AND:  r_arith_op <= #1 AND;
-                default:     r_arith_op <= #1 0;
-            endcase
-        end else begin
-            r_arith_op <= #1 ADD;
-        end
-        
-        case (funct3)
-            FUNCT3_EQ:   r_logic_op <= #1 EQ;
-            FUNCT3_NEQ:  r_logic_op <= #1 NEQ;
-            FUNCT3_LT:   r_logic_op <= #1 LT;
-            FUNCT3_GE:   r_logic_op <= #1 GE;
-            FUNCT3_LTU:  r_logic_op <= #1 LTU;
-            FUNCT3_GEU:  r_logic_op <= #1 GEU;
-            default:     r_logic_op <= #1 0;
-        endcase
-    end
 
+    // Jump
+    assign #1 jump = (instr_type == BRANCH |
+                      instr_type == JAL    |
+                      instr_type == JALR);
+
+        
     ALU arith_alu(
         .clk(clk),
         .reset(reset),
-        .lhs(r_arith_lhs),
-        .rhs(r_arith_rhs),
-        .op(r_arith_op),
+        .req(req),
+        .lhs(arith_lhs),
+        .rhs(arith_rhs),
+        .op(arith_op),
         .res(arith_res)
     );
 
     ALU logic_alu(
         .clk(clk),
         .reset(reset),
-        .lhs(r_logic_lhs),
-        .rhs(r_logic_rhs),
-        .op(r_logic_op),
+        .req(req),
+        .lhs(logic_lhs),
+        .rhs(logic_rhs),
+        .op(logic_op),
         .res(logic_res)
     );
-    
-    assign #1 next_pc    = (~r_jump              ? pc + 4    :
-                            instr_type != BRANCH ? arith_res :
-                            logic_res            ? arith_res : pc + 4);
-    assign #1 result      = (r_jump ? pc + 4 : arith_res);
+
+    // Next PC
+    assign #1 next_pc    = (~jump                ? pc + 4
+                         :  instr_type != BRANCH ? arith_res
+                         :  logic_res            ? arith_res
+                         :  pc + 4);
+
+    // Result
+    assign #1 result = (jump ? pc + 4 : arith_res);
+
+    // MEM
     assign #1 wr_mem_data = rrs2;
     assign #1 wr_mem      = (instr_type == STORE);
     assign #1 rd_mem      = (instr_type == LOAD);
     assign #1 wr_mem_addr = (wr_mem ? arith_res : 32'b0);
     assign #1 rd_mem_addr = (rd_mem ? arith_res : 32'b0);
+
+    // WB
     assign #1 wr_regfile  = (instr_type != STORE && instr_type != BRANCH);
 endmodule

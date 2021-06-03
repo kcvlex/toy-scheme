@@ -1,3 +1,4 @@
 *.s
 *.o
 top.v
+__pycache__

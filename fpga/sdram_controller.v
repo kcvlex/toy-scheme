@@ -1,6 +1,4 @@
 module SDRAM_CONTROLLER(
-    output wire [3:0] o_state,
-
     input wire clk,
     input wire reset,
 
@@ -9,7 +7,7 @@ module SDRAM_CONTROLLER(
     input  wire [31:0] rd_addr,
     input  wire        rd_req,
     output reg         rd_fin,
-    output reg  [31:0] rd_data,
+    output wire [31:0] rd_data,
     
     input  wire [31:0] wr_addr,
     input  wire        wr_req,
@@ -31,14 +29,14 @@ module SDRAM_CONTROLLER(
 );
     `include "sdram_params.hv"
 
-    localparam REF_INTERVAL = 32'd400; // FIXME
+    localparam REF_INTERVAL = 32'd350; // FIXME
     localparam RW_REQ_TIMES = 2;
 
     // Common
     reg [3:0]  state = IDLE, target_state = IDLE;
     reg [3:0]  command = CMD_NOP;
     reg [31:0] wait_counter = 32'b0;
-    reg [31:0]  wait_interval = 32'b0;
+    reg [31:0] wait_interval = 32'b0;
 
     // Refresh
     reg [31:0] since_last_ref = 32'b0;
@@ -47,7 +45,6 @@ module SDRAM_CONTROLLER(
     // wire init_fin;
 
     // Read/Write
-    reg [3:0]  rw_op_cnt = 4'b0;
     reg [31:0] wr_buffer = 32'b0;
     reg [7:0]  rw_rem = 8'b0;
     wire       consume_req;
@@ -68,7 +65,10 @@ module SDRAM_CONTROLLER(
     reg [12:0]  r_inter_addr;
     reg [1:0]   r_inter_ba;
     reg [1:0]   r_inter_dqm;
-
+    reg [31:0]  inter_rd_data;
+    reg         inter_wr_req;
+    reg         inter_rd_req;
+   
     wire [12:0] init_addr;
     wire [1:0]  init_ba;
     wire        init_cas_n;
@@ -103,6 +103,8 @@ module SDRAM_CONTROLLER(
             rd_fin         <= 1'b0;
             wait_counter   <= 32'b0;
             send_data      <= 1'b0;
+            inter_wr_req   <= 1'b0;
+            inter_rd_req   <= 1'b0;
         end else if (~init_fin) begin
             since_last_ref <= 32'b0;
             state          <= PREPARING;
@@ -110,15 +112,17 @@ module SDRAM_CONTROLLER(
             rd_fin         <= 1'b0;
             wait_counter   <= 32'b0;
             send_data      <= 1'b0;
+            inter_wr_req   <= 1'b0;
+            inter_rd_req   <= 1'b0;
         end else begin
             case (state)
                 PREPARING: begin
-                        state          <= IDLE;
-                        command        <= CMD_NOP;
-                        wait_counter   <= 32'b0;
-                        since_last_ref <= 32'b0;
-                        r_inter_addr   <= 13'b0;
-                        r_inter_ba     <= 2'b0;
+                    state              <= IDLE;
+                    command            <= CMD_NOP;
+                    wait_counter       <= 32'b0;
+                    since_last_ref     <= 32'b0;
+                    r_inter_addr       <= 13'b0;
+                    r_inter_ba         <= 2'b0;
                 end
                 IDLE: begin
                     if (REF_INTERVAL < since_last_ref) begin
@@ -130,15 +134,28 @@ module SDRAM_CONTROLLER(
                         since_last_ref <= 32'b0;
                         r_inter_addr   <= 13'b0;
                         r_inter_ba     <= 2'b0;
-                    end else if (wr_req || rd_req) begin
+                        wr_fin         <= wr_req & wr_fin;
+                        rd_fin         <= rd_req & rd_fin;
+                    end else if (wr_req & ~wr_fin) begin
                         state          <= WAIT;
                         wait_interval  <= T_RCD;
                         target_state   <= ROW_ACTIVE;
                         command        <= CMD_ACT;
                         wait_counter   <= 32'b0;
                         since_last_ref <= since_last_ref + 32'b1;
-                        r_inter_addr   <= (rd_req ? rd_addr[22:10] : wr_addr[22:10]);
-                        r_inter_ba     <= (rd_req ? rd_addr[24:23] : wr_addr[24:23]);
+                        r_inter_addr   <= wr_addr[22:10];
+                        r_inter_ba     <= wr_addr[24:23];
+                        inter_wr_req   <= 1'b1;
+                    end else if (rd_req & ~rd_fin) begin
+                        state          <= WAIT;
+                        wait_interval  <= T_RCD;
+                        target_state   <= ROW_ACTIVE;
+                        command        <= CMD_ACT;
+                        wait_counter   <= 32'b0;
+                        since_last_ref <= since_last_ref + 32'b1;
+                        r_inter_addr   <= rd_addr[22:10];
+                        r_inter_ba     <= rd_addr[24:23];
+                        inter_rd_req   <= 1'b1;
                     end else begin
                         state          <= IDLE;
                         command        <= CMD_NOP;
@@ -146,11 +163,13 @@ module SDRAM_CONTROLLER(
                         since_last_ref <= since_last_ref + 32'b1;
                         r_inter_addr   <= 13'b0;
                         r_inter_ba     <= 2'b0;
+                        wr_fin         <= wr_req & wr_fin;
+                        rd_fin         <= rd_req & rd_fin;
                     end
                     r_inter_dqm        <= 2'b11;
                 end
                 ROW_ACTIVE: begin
-                    if (wr_req) begin
+                    if (inter_wr_req) begin
                         state          <= WRITE;
                         command        <= CMD_WRITE;
                         wr_buffer      <= wr_data;
@@ -159,17 +178,17 @@ module SDRAM_CONTROLLER(
                         r_inter_ba     <= wr_addr[24:23];
                         r_inter_dqm    <= 2'b00;
                         rw_rem         <= RW_REQ_TIMES - 1;
-                    end else if (rd_req) begin
+                        inter_wr_req   <= 1'b0;
+                    end else if (inter_rd_req) begin
                         state          <= READ;
                         command        <= CMD_READ;
                         r_inter_addr   <= { 3'b0, rd_addr[9:0] };
                         r_inter_ba     <= rd_addr[24:23];
                         r_inter_dqm    <= 2'b00;
                         rw_rem         <= RW_REQ_TIMES;
+                        inter_rd_req   <= 1'b0;
                     end else begin
                         // FIXME : unreachable ??
-                        state          <= ROW_ACTIVE;
-                        command        <= CMD_NOP;
                     end
                     since_last_ref     <= since_last_ref + 32'b1;
                 end
@@ -221,11 +240,11 @@ module SDRAM_CONTROLLER(
                     command            <= CMD_PRECHARGE;
                     wait_counter       <= 32'b0;
                     since_last_ref     <= since_last_ref + 32'b1;
+                    wr_fin             <= wr_req & wr_fin;
+                    rd_fin             <= rd_req & rd_fin;
                 end
                 WAIT: begin
                     command            <= CMD_NOP;
-                    wr_fin             <= 1'b0;
-                    rd_fin             <= 1'b0;
                     if (wait_counter + 1 == wait_interval) begin
                         state          <= target_state;
                     end else begin
@@ -233,6 +252,10 @@ module SDRAM_CONTROLLER(
                     end
                     wait_counter       <= wait_counter + 32'b1;
                     since_last_ref     <= since_last_ref + 32'b1;
+                    if (target_state == IDLE | target_state == PRECHARGE) begin
+                        wr_fin         <= wr_req & wr_fin;
+                        rd_fin         <= rd_req & rd_fin;
+                    end
                 end
                 default: begin
                     command            <= CMD_NOP;
@@ -244,14 +267,14 @@ module SDRAM_CONTROLLER(
 
     always @(negedge clk) begin
         case (state)
-            ROW_ACTIVE: rd_data <= 32'b0;
-            READING:    rd_data <= (rd_data << 16) | { 16'b0, DRAM_DQ };
-            default:    rd_data <= rd_data;
+            ROW_ACTIVE: inter_rd_data <= 32'b0;
+            READING:    inter_rd_data <= (inter_rd_data << 16) | { 16'b0, DRAM_DQ };
+            default:    inter_rd_data <= inter_rd_data;
         endcase
     end
 
     assign { inter_cs_n, inter_ras_n, inter_cas_n, inter_we_n } = command;
-    assign { inter_ldqm, inter_rdqm } = r_inter_dqm;
+    assign { inter_ldqm, inter_udqm } = r_inter_dqm;
     assign inter_dq = wr_buffer[15:0];
     assign inter_addr = r_inter_addr;
     assign inter_ba = r_inter_ba;
@@ -267,5 +290,6 @@ module SDRAM_CONTROLLER(
     assign DRAM_UDQM  = (init_fin  ? inter_udqm  : init_udqm);
     assign DRAM_RAS_N = (init_fin  ? inter_ras_n : init_ras_n);
     assign DRAM_WE_N  = (init_fin  ? inter_we_n  : init_we_n);
-    assign o_state = state;
+
+    assign rd_data = { inter_rd_data[15:0], inter_rd_data[31:16] };
 endmodule

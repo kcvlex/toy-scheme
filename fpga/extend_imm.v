@@ -6,9 +6,9 @@ module EXTEND_IMM(
     `include "instr_type.hv"
 
     wire [11:0] #1 imm12 = (instr_format == I_TYPE ? instr[31:20] :
-                            instr_format == S_TYPE ? { instr[31:25], instr[11:7] } : 0);
-    wire [12:0] #1 imm13 = (instr_format == B_TYPE ? { instr[31], instr[7], instr[30:25], instr[11:8], 1'b0 } : 0);
-    wire [19:0] #1 imm20 = (instr_format == J_TYPE ? { instr[31], instr[19:12], instr[20], instr[30:21], 1'b0 } : 0);
+                            instr_format == S_TYPE ? { instr[31:25], instr[11:7] } : 12'b0);
+    wire [12:0] #1 imm13 = (instr_format == B_TYPE ? { instr[31], instr[7], instr[30:25], instr[11:8], 1'b0 } : 13'b0);
+    wire [19:0] #1 imm20 = (instr_format == J_TYPE ? { instr[31], instr[19:12], instr[20], instr[30:21], 1'b0 } : 20'b0);
 
     assign #1 imm = (instr_format == R_TYPE ? 32'd0 :
                      instr_format == I_TYPE ? { {20{imm12[11]}}, imm12[11:0] } :

@@ -7,11 +7,12 @@ module REGFILE(
     input  wire [4:0]  rs2,
     input  wire [4:0]  rd,
     output wire [31:0] rrs1, 
-    output wire [31:0] rrs2
+    output wire [31:0] rrs2,
+    output wire [31:0] a10
 );
     reg [31:0] x[0:31];
 
-    always @(negedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) begin
             x[0] <= #1 0;
             x[1] <= #1 0;  // return address(link register)
@@ -24,4 +25,5 @@ module REGFILE(
 
     assign #1 rrs1 = x[rs1];
     assign #1 rrs2 = x[rs2];
+    assign #1 a10  = x[10];
 endmodule

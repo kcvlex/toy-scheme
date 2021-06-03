@@ -136,7 +136,11 @@ head = """
 module top();
     reg CLK, RST_X;
     initial begin CLK = 1; forever #50 CLK = ~CLK; end
-    initial begin RST_X = 0; #2000 RST_X = 1;       end
+    initial begin 
+        RST_X = 0; 
+        #2000 RST_X = 1;
+        #100  RST_X = 0;
+    end
     initial begin #10000000 $finish(); end
     initial begin $dumpfile("wave.vcd"); $dumpvars(0, p); end
 """
@@ -159,8 +163,8 @@ def gen_tail():
     end
 
     PROCESSOR p(
-        .CLK(CLK), 
-        .RST_X(RST_X)
+        .clk(CLK), 
+        .reset(RST_X)
     );
 endmodule
     """
@@ -173,8 +177,8 @@ endmodule
     wire [15:0] dram_rd_data, dram_wr_data;
 
     PROCESSOR p(
-        .CLK(CLK), 
-        .RST_X(RST_X)
+        .clk(CLK), 
+        .reset(RST_X)
     );
 endmodule
     """
@@ -221,7 +225,7 @@ class Generator:
         display = self.set_display()
         body = '\n'.join(
                 [ "    initial begin",
-                  "        p.PC = {};".format(fix_hex(parser.entry-4, 32)),
+                  "        p.PC = {};".format(fix_hex(parser.entry, 32)),
                   imem,
                   data,
                   "    end" ])

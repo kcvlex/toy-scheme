@@ -115,5 +115,5 @@ module SDRAM_INITIALIZER(
     assign DRAM_ADDR = inter_addr;
     assign { DRAM_CS_N, DRAM_RAS_N, DRAM_CAS_N, DRAM_WE_N } = command;
     assign DRAM_BA = 2'b0;
-    assign { DRAM_UDQM, DRAM_RDQM } = 2'b0;
+    assign { DRAM_UDQM, DRAM_LDQM } = 2'b0;
 endmodule

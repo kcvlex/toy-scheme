@@ -1,5 +1,8 @@
 module INSTR_DECODER(
-    input wire [31:0] instr,
+    input  wire clk,
+    input  wire reset,
+    input  wire req,
+    input  wire [31:0] instr,
     output wire [4:0] rs1, rs2, rd,
     output wire [31:0] imm,
     output wire [2:0] funct3,
@@ -15,6 +18,15 @@ module INSTR_DECODER(
     wire [4:0] #1 opcode = instr[6:2];
     wire [2:0] instr_format;
  
-    INSTR_TYPE instr_t(opcode, instr_format, instr_type);
-    EXTEND_IMM extend_imm(instr, instr_format, imm);
+    INSTR_TYPE itype(
+        .opcode(opcode),
+        .instr_format(instr_format),
+        .instr_type(instr_type)
+    );
+    
+    EXTEND_IMM extend_imm(
+        .instr(instr), 
+        .instr_format(instr_format), 
+        .imm(imm)
+    );
 endmodule

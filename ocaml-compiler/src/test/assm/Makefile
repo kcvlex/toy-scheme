@@ -18,6 +18,10 @@ simulate : ${SIM_BIN}
 fpga : ${FPGA_BIN} parser.py
 	riscv32-elf-objdump -x -h -s -Mno-aliases $< | python parser.py > top.v
 
+.PHONY : uart
+uart: ${FPGA_BIN} parser.py uart.py
+	riscv32-elf-objdump -x -h -s -Mno-aliases $< | sudo python uart.py
+
 .PHONY : dump32
 dump32 : ${FPGA_BIN}
 	riscv32-elf-objdump -d -x -h -Mno-aliases $< | less

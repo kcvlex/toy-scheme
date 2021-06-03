@@ -1,0 +1,3 @@
+[submodule "fpga/de10lite-hdl"]
+	path = fpga/de10lite-hdl
+	url = https://github.com/hildebrandmw/de10lite-hdl
