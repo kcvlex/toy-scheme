@@ -67,6 +67,9 @@ module DE10_LITE_Golden_Top(
     //=======================================================
     //  REG/WIRE declarations
     //=======================================================
+
+    localparam ENTRY_ADDR = 32'h10198;
+    localparam MEM_START  = 32'h10010;
     
     // SDRAM
     wire        dram_wr_req;
@@ -100,23 +103,36 @@ module DE10_LITE_Golden_Top(
     wire [31:0] proc_dram_rd_addr;
 
     // DEBUG
-    wire        dbg_tx_req;
-    wire [7:0]  dbg_tx_data;
     wire        dbg_dram_rd_req;
     wire [31:0] dbg_dram_rd_addr;
     wire [31:0] dbg_mem_data;
+    wire        dbg_mem_hl;
+    wire [31:0] dbg_entry_addr;
+
+    // Control
+    wire        program_load;
+    wire        exec_proc;
+    wire        read_program;
+    wire        none;
+    wire        RST_X;
+    wire [31:0] PC;
+    
+
+    // Display
+    wire        display;
+    wire [31:0] display_data;
+    wire [31:0] seg7_data;
+    wire [3:0]  d0, d1, d2, d3, d4, d5;
 
     //=======================================================
     //  Structural coding
     //=======================================================
-
-    localparam ENTRY_ADDR = 32'h10198;
-
-    wire program_load = SW[0];
-    wire exec_proc    = SW[1];
-    wire read_program = SW[2];
-
-    wire RST_X = ~KEY[0];
+    
+    assign program_load = SW[0];
+    assign exec_proc    = SW[1];
+    assign read_program = SW[2];
+    assign none         = SW[9];
+    assign RST_X        = ~KEY[0];
 
     /*
     wire clk25, clk50, clk100, clk70;
@@ -129,6 +145,12 @@ module DE10_LITE_Golden_Top(
         .c3(clk70)
     );
     */
+    
+
+    ////////////////////////////// UART //////////////////////////////
+
+    assign tx_req  = (program_load ? pl_tx_req  : 1'b0);
+    assign tx_data = (program_load ? pl_tx_data : 8'b0);
 
     uart uart1(
         .clk(MAX10_CLK1_50),
@@ -143,6 +165,9 @@ module DE10_LITE_Golden_Top(
         .tx_transmit(tx_req),
         .tx_ready(tx_ready)
     );
+
+
+    ////////////////////////////// LOAD PROGRAM //////////////////////////////
 
     PROGRAM_LOADER pl(
         .clk(MAX10_CLK1_50),
@@ -162,9 +187,12 @@ module DE10_LITE_Golden_Top(
         .wr_data(pl_dram_wr_data)
     );
 
-    localparam MEM_START = 32'h10010;
-    wire [31:0] rd_start = (SW[9] ? MEM_START : ENTRY_ADDR);
-    SIMPLE_READ tester(
+    ////////////////////////////// CHECK MEMORY //////////////////////////////
+
+    assign dbg_entry_addr = (SW[4] ? MEM_START : ENTRY_ADDR);
+    assign dbg_mem_hl     = SW[3];
+
+    CHECK_MEMORY check_mem(
         .clk(MAX10_CLK1_50),
         .reset(RST_X),
 
@@ -175,95 +203,13 @@ module DE10_LITE_Golden_Top(
         .rd_fin(dram_rd_fin),
         .rd_addr(dbg_dram_rd_addr),
         .rd_data(dram_rd_data),
-        .rd_addr_init(rd_start),
+        .rd_addr_init(dbg_entry_addr),
         .dout(dbg_mem_data)
     );
-   
-    wire [3:0] o_state;
-    SDRAM_CONTROLLER sdram_cont(
-        .clk(MAX10_CLK1_50),
-        .reset(RST_X),
-        .o_state(o_state),
 
-        .rd_req(dram_rd_req),
-        .rd_addr(dram_rd_addr),
-        .rd_fin(dram_rd_fin),
-        .rd_data(dram_rd_data),
 
-        .wr_req(dram_wr_req),
-        .wr_addr(dram_wr_addr),
-        .wr_fin(dram_wr_fin),
-        .wr_data(dram_wr_data),
+    ////////////////////////////// SDRAM //////////////////////////////
 
-        //////////// SDRAM //////////
-        .DRAM_ADDR(DRAM_ADDR),
-        .DRAM_BA(DRAM_BA),
-        .DRAM_CAS_N(DRAM_CAS_N),
-        .DRAM_CKE(DRAM_CKE),
-        .DRAM_CLK(DRAM_CLK),
-        .DRAM_CS_N(DRAM_CS_N),
-        .DRAM_DQ(DRAM_DQ),
-        .DRAM_LDQM(DRAM_LDQM),
-        .DRAM_RAS_N(DRAM_RAS_N),
-        .DRAM_UDQM(DRAM_UDQM),
-        .DRAM_WE_N(DRAM_WE_N)
-    );
-
-    wire display;
-    wire [31:0] display_data;
-    wire [31:0] PC;
-    wire [3:0] state;
-    wire [31:0] reorder_rd_data = { dram_rd_data[15:0], dram_rd_data[31:16] };
-    wire [31:0] o_instr;
-    PROCESSOR proc(
-        .clk(MAX10_CLK1_50),
-        .reset(RST_X),
-
-        .state(state),
-        .PC(PC),
-        .o_instr(o_instr),
-        .req(exec_proc),
-
-        .entry_addr(ENTRY_ADDR),
-
-        .dram_wr_req(proc_dram_wr_req),
-        .dram_wr_fin(dram_wr_fin),
-        .dram_wr_addr(proc_dram_wr_addr),
-        .dram_wr_data(proc_dram_wr_data),
-
-        .dram_rd_req(proc_dram_rd_req),
-        .dram_rd_fin(dram_rd_fin),
-        .dram_rd_addr(proc_dram_rd_addr),
-        .dram_rd_data(reorder_rd_data),
-
-        .display(display),
-        .display_data(display_data)
-    );
-
-    reg [31:0] hpre_dram_rd_data;
-    always @(posedge MAX10_CLK1_50 or posedge RST_X) begin
-        if (RST_X) begin
-            hpre_dram_rd_data <= 32'b0;
-        end else begin
-            hpre_dram_rd_data <= dram_rd_data;
-        end
-    end
-    wire [31:0] log = (SW[5] ? hpre_dram_rd_data : dram_rd_addr);
-    PC_LOG pclog(
-        .clk(MAX10_CLK1_50),
-        .reset(RST_X),
-        .pc(log),
-        .tx_ready(tx_ready),
-        .tx_req(dbg_tx_req),
-        .tx_data(dbg_tx_data)
-    );
-    
-    assign tx_req       = program_load ? pl_tx_req
-                        : exec_proc    ? dbg_tx_req
-                        :                1'b0;
-    assign tx_data      = program_load ? pl_tx_data
-                        : exec_proc    ? dbg_tx_data
-                        :                8'b0;
     assign dram_wr_req  = program_load ? pl_dram_wr_req
                         : exec_proc    ? proc_dram_wr_req
                         :                1'b0;
@@ -280,165 +226,182 @@ module DE10_LITE_Golden_Top(
                         : read_program ? dbg_dram_rd_addr
                         :                32'b0;
 
-    wire [23:0] seg7_data = read_program ? { dbg_mem_data[7:0], dbg_mem_data[31:16] }
-                          : display      ? { state, display_data[19:0] }
-                          :                PC[23:0];
-    wire [3:0] d0 = seg7_data[ 3: 0];
-    wire [3:0] d1 = seg7_data[ 7: 4];
-    wire [3:0] d2 = seg7_data[11: 8];
-    wire [3:0] d3 = seg7_data[15:12];
-    wire [3:0] d4 = seg7_data[19:16];
-    wire [3:0] d5 = seg7_data[23:20];
+    SDRAM_CONTROLLER sdram_cont(
+        .clk(MAX10_CLK1_50),
+        .reset(RST_X),
 
-    SEG7_LUT u0(
-        .iDIG(d0),
-        .oSEG(HEX0),
-        .none(1'b0)
-    );
-    SEG7_LUT u1(
-        .iDIG(d1),
-        .oSEG(HEX1),
-        .none(1'b0)
-    );
-    SEG7_LUT u2(
-        .iDIG(d2),
-        .oSEG(HEX2),
-        .none(1'b0)
-    );
-    SEG7_LUT u3(
-        .iDIG(d3),
-        .oSEG(HEX3),
-        .none(1'b0)
-    );
-    SEG7_LUT u4(
-        .iDIG(d4),
-        .oSEG(HEX4),
-        .none(1'b0)
-    );
-    SEG7_LUT u5(
-        .iDIG(d5),
-        .oSEG(HEX5),
-        .none(1'b0)
+        .rd_req(dram_rd_req),
+        .rd_addr(dram_rd_addr),
+        .rd_fin(dram_rd_fin),
+        .rd_data(dram_rd_data),
+
+        .wr_req(dram_wr_req),
+        .wr_addr(dram_wr_addr),
+        .wr_fin(dram_wr_fin),
+        .wr_data(dram_wr_data),
+
+        .DRAM_ADDR(DRAM_ADDR),
+        .DRAM_BA(DRAM_BA),
+        .DRAM_CAS_N(DRAM_CAS_N),
+        .DRAM_CKE(DRAM_CKE),
+        .DRAM_CLK(DRAM_CLK),
+        .DRAM_CS_N(DRAM_CS_N),
+        .DRAM_DQ(DRAM_DQ),
+        .DRAM_LDQM(DRAM_LDQM),
+        .DRAM_RAS_N(DRAM_RAS_N),
+        .DRAM_UDQM(DRAM_UDQM),
+        .DRAM_WE_N(DRAM_WE_N)
     );
 
-    LED_CONT l0(RST_X, LEDR[0]);
-    LED_CONT l1(dram_wr_req, LEDR[1]);
-    //LED_CONT l2(dram_wr_fin, LEDR[2]);
-    LED_CONT l3(dram_rd_req, LEDR[3]);
-    //LED_CONT l4(dram_rd_fin, LEDR[4]);
+
+    ////////////////////////////// PROCESSOR //////////////////////////////
+
+    PROCESSOR proc(
+        .clk(MAX10_CLK1_50),
+        .reset(RST_X),
+
+        .PC(PC),
+        .req(exec_proc),
+
+        .entry_addr(ENTRY_ADDR),
+
+        .dram_wr_req(proc_dram_wr_req),
+        .dram_wr_fin(dram_wr_fin),
+        .dram_wr_addr(proc_dram_wr_addr),
+        .dram_wr_data(proc_dram_wr_data),
+
+        .dram_rd_req(proc_dram_rd_req),
+        .dram_rd_fin(dram_rd_fin),
+        .dram_rd_addr(proc_dram_rd_addr),
+        .dram_rd_data(dram_rd_data),
+
+        .display(display),
+        .display_data(display_data)
+    );
+
+
+    ////////////////////////////// DISPLAY (7-SEG LED) //////////////////////////////
+  
+    assign seg7_data = (read_program ? dbg_mem_data
+                     :  display      ? display_data
+                     :                 32'b0);
+
+    DISPLAY_SEG7 seg7(
+        .clk(MAX10_CLK1_50),
+        .reset(RST_X),
+        .none(none | ~(read_program | display)),
+        .dbg(read_program),
+        .hi(read_program & dbg_mem_hl),
+        .lo(read_program & ~dbg_mem_hl),
+        .num(display | read_program),
+        .data(seg7_data),
+        .HEX0(HEX0),
+        .HEX1(HEX1),
+        .HEX2(HEX2),
+        .HEX3(HEX3),
+        .HEX4(HEX4),
+        .HEX5(HEX5)
+    );
 endmodule
 
-module SWITCH_HL(
-    input wire [3:0] dl, dh,
-    input wire sw,
-    output wire [3:0] dout
+module DISPLAY_SEG7(
+    input  wire        clk,
+    input  wire        reset,
+    input  wire        none,
+    input  wire        dbg,
+    input  wire        hi,
+    input  wire        lo,
+    input  wire        num,
+    input  wire [32:0] data,
+
+    output wire [7:0]  HEX0,
+    output wire [7:0]  HEX1,
+    output wire [7:0]  HEX2,
+    output wire [7:0]  HEX3,
+    output wire [7:0]  HEX4,
+    output wire [7:0]  HEX5
 );
-    assign dout = (~sw ? dl : dh);
-endmodule
-
-module LED_CONT(
-    input wire key,
-    output wire led
-);
-    reg s = 1'b0;
-    always @(posedge key) begin
-        s <= ~s;
-    end
-    assign led = s;
-endmodule
-
-module PC_LOG(
-    input wire clk,
-    input wire reset,
-    input wire [31:0] pc,
-    input wire tx_ready,
-    output reg tx_req,
-    output reg [7:0] tx_data
-);
-    reg [3:0] rem;
-    reg [31:0] data, buffer;
-    reg idle, hpre_idle;
-
-    always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            idle <= 1'b1;
-            data <= 32'b0;
-        end else begin
-            if (idle && data != pc) begin
-                data <= pc;
-                idle <= 1'b0;
-            end else if (~idle && rem == 4'b0) begin
-                idle <= 1'b1;
-            end
-        end
-    end
-
-    always @(negedge clk or posedge reset) begin
-        if (reset) begin
-            hpre_idle <= 1'b1;
-            rem <= 4'b0;
-            buffer <= 32'b0;
-            tx_req <= 1'b0;
-        end else begin
-            if (hpre_idle && ~idle) begin
-                rem <= 4'd4;
-                buffer <= data;
-            end else if (~hpre_idle && 4'b0 < rem) begin
-                if (tx_ready) begin
-                    tx_req <= 1'b1;
-                    tx_data <= buffer[31:24];
-                    buffer <= buffer << 8;
-                    rem <= rem - 4'b1;
-                end else begin
-                    tx_req <= 1'b0;
-                end
-            end else if (~hpre_idle && idle) begin
-                tx_req <= 1'b0;
-            end
-            hpre_idle <= idle;
-        end
-    end
-endmodule
-
-module SIMPLE_READ(
-    input wire clk,
-    input wire reset,
-
-    input wire sw,
-    input wire key,
-
-    input wire rd_fin,
-    output reg rd_req,
-    output reg [31:0] rd_addr,
-    input wire [31:0] rd_data,
-    input wire [31:0] rd_addr_init,
-    output reg [31:0] dout
-);
-    wire key_pulse;
-    DETECT_NEGEDGE detect_key(
-        .CLK(clk),
-        .RESET(reset),
-        .SIGNAL(key),
-        .EDGE(key_pulse),
+    wire [3:0] d0 = (dbg && hi ? data[19:16] : data[ 3: 0]);
+    wire [3:0] d1 = (dbg && hi ? data[23:20] : data[ 7: 4]);
+    wire [3:0] d2 = (dbg && hi ? data[27:24] : data[11: 8]);
+    wire [3:0] d3 = (dbg && hi ? data[31:28] : data[15:12]);
+    
+    SEG7 u0(
+        .clk(clk),
+        .reset(reset),
+        .din(d0),
+        .none(none),
+        .num(num),
+        .hi_1(1'b0),
+        .hi_2(1'b0),
+        .lo_1(1'b0),
+        .lo_2(1'b0),
+        .dot(1'b0),
+        .dout(HEX0)
     );
-
-    always @(negedge clk or posedge reset) begin
-        if (reset) begin
-            rd_req <= 1'b0;
-            rd_addr <= rd_addr_init;
-            dout <= 32'b0;
-        end else if (sw) begin
-            if (~rd_req) begin
-                if (key_pulse) begin
-                    rd_req <= 1'b1;
-                end
-            end else begin
-                if (rd_fin) begin
-                    rd_req <= 1'b0;
-                    rd_addr <= rd_addr + 32'd4;
-                    dout <= rd_data;
-                end
-            end
-        end
-    end
+    SEG7 u1(
+        .clk(clk),
+        .reset(reset),
+        .din(d1),
+        .none(none),
+        .num(num),
+        .hi_1(1'b0),
+        .hi_2(1'b0),
+        .lo_1(1'b0),
+        .lo_2(1'b0),
+        .dot(1'b0),
+        .dout(HEX1)
+    );
+    SEG7 u2(
+        .clk(clk),
+        .reset(reset),
+        .din(d2),
+        .none(none),
+        .num(num),
+        .hi_1(1'b0),
+        .hi_2(1'b0),
+        .lo_1(1'b0),
+        .lo_2(1'b0),
+        .dot(1'b0),
+        .dout(HEX2)
+    );
+    SEG7 u3(
+        .clk(clk),
+        .reset(reset),
+        .din(d3),
+        .none(none),
+        .num(num),
+        .hi_1(1'b0),
+        .hi_2(1'b0),
+        .lo_1(1'b0),
+        .lo_2(1'b0),
+        .dot(1'b0),
+        .dout(HEX3)
+    );
+    SEG7 u4(
+        .clk(clk),
+        .reset(reset),
+        .din(data[19:16]),
+        .none(none),
+        .num(num),
+        .hi_1(1'b0),
+        .hi_2(dbg & hi),
+        .lo_1(1'b0),
+        .lo_2(dbg & lo),
+        .dot(dbg),
+        .dout(HEX4)
+    );
+    SEG7 u5(
+        .clk(clk),
+        .reset(reset),
+        .din(data[23:20]),
+        .none(none),
+        .num(num),
+        .hi_1(dbg & hi),
+        .hi_2(1'b0),
+        .lo_1(dbg & lo),
+        .lo_2(1'b0),
+        .dot(1'b0),
+        .dout(HEX5)
+    );
 endmodule
